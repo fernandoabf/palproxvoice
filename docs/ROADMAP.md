@@ -1,27 +1,25 @@
 # Roadmap — PalProxVoice
 
-## Estado atual — `v0.1.0-alpha`
+## Estado atual — `v0.2.0` (validado in-game)
 
-Protótipo funcional ponta-a-ponta, validado:
+Produto funcionando ponta-a-ponta, **2 pessoas reais pela internet**:
 
-- **M1** — mod UE4SS lê posição+direção do Palworld (build GDK) e escreve em arquivo. ✅ validado no jogo.
-- **M2** — servidor de voz (Go/pion, SFU + relay de posição). ✅ compila e roda.
-- **M3** — espacialização 3D (Web Audio/HRTF) no navegador, alimentada pela posição real via **bridge**. ✅ posição real chega no companion.
+- **M1** — mod UE4SS lê posição+direção e escreve em `C:\Users\Public\palproxvoice_pos.txt`. ✅ validado no jogo.
+- **M2** — servidor de voz (Go/pion, SFU + relay de posição) na VPS, atrás de TLS + UDP. ✅ no ar.
+- **M3** — companion (Wails, app único) lê a posição e espacializa em 3D (Web Audio/HRTF); auto-conecta. ✅ proximidade validada in-game.
 
-Hoje rodam **3 peças soltas**: jogo+mod · bridge · navegador. Este alpha é o
-**checkpoint** antes de construir a companion, que junta tudo num app só.
+Distribuição: release com `palproxvoice.exe` + bundle `PalProxVoice-UE4SS.zip` (UE4SS v3.0.1 exato + mod).
 
-## Próximo — o companion (vira o produto)
+## M4 — polimento (a fazer)
 
-Absorve a bridge e o navegador num **app único** (Wails — Go + webview). Build
-**no Windows** (precisa WebView2), feito pelo dono.
+Núcleo pronto; tudo abaixo é conforto:
 
-| Fase | Ideia | Status |
-|------|-------|--------|
-| 1 | **Consolidar**: backend lê o arquivo direto (bridge some) + janela própria. Reaproveita o áudio que já funciona. | feito ✓ (validado in-game) |
-| 2 | **Config + auto-connect** (servidor, senha, alcance, volume; conecta sozinho). | feito ✓ (validado in-game) |
-| 3 | **Overlay** (always-on-top, quem fala, push-to-talk, mute) — o feeling Simple Voice Chat. | a fazer |
-| 4 | **Empacotar** (.exe único, auto-start opcional, instalar pra galera). | a fazer |
+- **Overlay** — always-on-top, "quem está falando", push-to-talk, mute.
+- **Auto-start escondido** — companion sobe sozinho; jogador nunca abre o `.exe`.
+- **Fechar a voz ao sair do servidor** — posição parada por N s → desconecta sozinho.
+- **Escolher microfone + saída de áudio** — na config.
+- **Instalador único** — UE4SS v3.0.1 + mod + companion num clique (hoje: 2 downloads + extrair).
+- ~~Plano B (REST, sem UE4SS)~~ — **parado por enquanto**.
 
 ## Decisões travadas
 
