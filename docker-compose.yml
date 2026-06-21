@@ -12,5 +12,5 @@ services:
     environment:
       VOICE_PASSWORD: "${VOICE_PASSWORD:-test}"
       # LOCAL no proprio PC: deixa vazio. Pra acessar de OUTRA maquina (LAN/VPS),
-      # poe o IP dessa maquina aqui (pro audio achar caminho de volta). VPS: 69.62.88.69.
+      # poe o IP dessa maquina aqui (pro audio achar caminho de volta). VPS: o IP publico.
       PUBLIC_IP: "${PUBLIC_IP:-}"

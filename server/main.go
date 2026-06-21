@@ -52,7 +52,7 @@ type wsMsg struct {
 
 func main() {
 	password = os.Getenv("VOICE_PASSWORD")
-	publicIP := os.Getenv("PUBLIC_IP") // IP publico do VPS, ex: 69.62.88.69
+	publicIP := os.Getenv("PUBLIC_IP") // IP publico do VPS
 	wsPort := envOr("WS_PORT", "8080")
 
 	// Uma faixa fixa de portas UDP pro audio + anuncia o IP publico (sem TURN).
