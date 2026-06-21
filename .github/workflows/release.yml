@@ -35,9 +35,20 @@ jobs:
         working-directory: ./companion
         run: wails build -platform windows/amd64 -o palproxvoice.exe
 
-      - name: Zip do mod UE4SS
+      - name: Zip do mod UE4SS (so o mod)
         shell: pwsh
         run: Compress-Archive -Path mod/PalProxVoice -DestinationPath PalProxVoice-mod.zip -Force
+
+      # Bundle pronto: baixa o UE4SS v3.0.1 OFICIAL (estavel, nao o experimental)
+      # e junta o nosso mod. O jogador extrai isto direto no Pal\Binaries\Win64\.
+      - name: Montar bundle UE4SS v3.0.1 + mod
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://github.com/UE4SS-RE/RE-UE4SS/releases/download/v3.0.1/UE4SS_v3.0.1.zip" -OutFile ue4ss.zip
+          New-Item -ItemType Directory -Force -Path bundle | Out-Null
+          Expand-Archive -Path ue4ss.zip -DestinationPath bundle -Force
+          Copy-Item -Recurse -Force mod/PalProxVoice bundle/Mods/PalProxVoice
+          Compress-Archive -Path bundle/* -DestinationPath PalProxVoice-UE4SS.zip -Force
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -46,6 +57,7 @@ jobs:
           path: |
             ./companion/build/bin/palproxvoice.exe
             ./PalProxVoice-mod.zip
+            ./PalProxVoice-UE4SS.zip
           retention-days: 30
 
       - name: Create GitHub Release and attach files
@@ -55,6 +67,7 @@ jobs:
           files: |
             ./companion/build/bin/palproxvoice.exe
             ./PalProxVoice-mod.zip
+            ./PalProxVoice-UE4SS.zip
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
         env:
