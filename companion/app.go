@@ -68,7 +68,7 @@ func NewApp() *App {
 }
 
 func defaultConfig() Config {
-	return Config{Servers: []Server{}, Selected: 0, Volume: 1.0, AutoConnect: true, AutoPort: 8765}
+	return Config{Servers: []Server{}, Selected: 0, Volume: 1.0, AutoConnect: true, AutoDetect: true, AutoPort: 8765}
 }
 
 // configPath = %APPDATA%/PalProxVoice/config.json (config salva pelo usuario).

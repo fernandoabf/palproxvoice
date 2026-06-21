@@ -289,7 +289,7 @@ $('fbIgnore').addEventListener('click', hideFallback);
     const s = selectedServer();
     if (s) applyRange(s.voiceRangeMeters || 50);
     log('pronto — esperando entrar no jogo');
-    if (!s || !s.url || !s.password) { $('cfgSection').open = true; log('adicione um servidor na config'); }
+    if (!cfg.autoDetect && (!s || !s.url || !s.password)) { $('cfgSection').open = true; log('adicione um servidor na config'); }
   } catch (err) {
     log('erro ao carregar config: ' + err); $('cfgSection').open = true;
   }

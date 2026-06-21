@@ -5,7 +5,7 @@
   "selected": 0,
   "volume": 1.0,
   "autoConnect": true,
-  "autoDetect": false,
+  "autoDetect": true,
   "autoPort": 8765,
   "autoPassword": ""
 }
