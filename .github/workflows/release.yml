@@ -50,6 +50,18 @@ jobs:
           Copy-Item -Recurse -Force mod/PalProxVoice bundle/Mods/PalProxVoice
           Compress-Archive -Path bundle/* -DestinationPath PalProxVoice-UE4SS.zip -Force
 
+      # Instalador "1 clique": junta UE4SS+mod (bundle) + companion + config + scripts
+      - name: Montar instalador
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path inst | Out-Null
+          Copy-Item installer/install.ps1 inst/
+          Copy-Item installer/Instalar.bat inst/
+          Copy-Item PalProxVoice-UE4SS.zip inst/
+          Copy-Item companion/build/bin/palproxvoice.exe inst/
+          Copy-Item companion/config.json.example inst/config.json
+          Compress-Archive -Path inst/* -DestinationPath PalProxVoice-Installer.zip -Force
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -58,6 +70,7 @@ jobs:
             ./companion/build/bin/palproxvoice.exe
             ./PalProxVoice-mod.zip
             ./PalProxVoice-UE4SS.zip
+            ./PalProxVoice-Installer.zip
           retention-days: 30
 
       - name: Create GitHub Release and attach files
@@ -68,6 +81,7 @@ jobs:
             ./companion/build/bin/palproxvoice.exe
             ./PalProxVoice-mod.zip
             ./PalProxVoice-UE4SS.zip
+            ./PalProxVoice-Installer.zip
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
         env:

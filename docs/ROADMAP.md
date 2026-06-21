@@ -19,7 +19,7 @@ Núcleo pronto; tudo abaixo é conforto:
 - **Config embutida (sem o amigo configurar)** — companion lê um `config.json` ao lado do `.exe`; você preenche uma vez e distribui junto, amigo só abre e conecta.
 - **Fechar a voz ao sair do servidor** — posição parada por N s → desconecta sozinho.
 - **Escolher microfone + saída de áudio** — na config.
-- **Instalador único** — UE4SS v3.0.1 + mod + companion num clique (hoje: 2 downloads + extrair).
+- **Instalador único** ✓ — `PalProxVoice-Installer.zip`: acha o Palworld (Steam auto ou pergunta), instala UE4SS+mod+companion+config e configura **auto-start**. Você preenche o `config.json` e distribui.
 - **Nomes reais** _(depois)_ — o mod escreve o nome do player; peers aparecem com nome. Mais simples que REST.
 - **Auto-detectar IP** ✓ _(Direct Connect)_ — companion lê `InputIPAddress` do `GameUserSettings.ini` → conecta em `ws://<IP>:8765`. Só Direct Connect (lista do Steam não atualiza esse campo; senha não fica salva, sem `Pal.log`); **fallback = seletor manual**.
 - ~~Plano B (REST, sem UE4SS)~~ — **parado por enquanto**.
