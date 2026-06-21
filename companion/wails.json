@@ -1,0 +1,17 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "PalProxVoice Companion",
+  "outputfilename": "palproxvoice-companion",
+  "author": {
+    "name": "Fernando",
+    "email": "fernandobraga1032@gmail.com"
+  },
+  "frontend": {
+    "dir": "frontend",
+    "watcher": "",
+    "install": "",
+    "build": "",
+    "dev": "",
+    "devServerUrl": ""
+  }
+}

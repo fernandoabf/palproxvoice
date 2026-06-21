@@ -3,3 +3,6 @@
 
 # binarios / artefatos de build
 *.exe
+
+# saida do wails build
+companion/build/bin/

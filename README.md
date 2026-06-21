@@ -74,9 +74,17 @@ puxa de lá e usa a posição do **jogo** no lugar do WASD.
 > Se o log do jogo disser que **LuaSocket nao foi achado**, me avisa — passo o
 > fallback por arquivo.
 
+## Companion
+
+O **companion** (`companion/`) é um app desktop **Wails v2** (Go + WebView2) que
+junta a **bridge** e o **navegador** num único `.exe`: lê a posição do jogo
+direto do arquivo do mod e faz a voz por proximidade na mesma janela — sem rodar
+a ponte separada nem abrir o browser. Build e release em
+[companion/BUILD.md](companion/BUILD.md).
+
 ## VPS (Dokploy)
 
-- **Voice:** `.env` com `VOICE_PASSWORD` forte + `PUBLIC_IP=69.62.88.69`, depois
+- **Voice:** `.env` com `VOICE_PASSWORD` forte + `PUBLIC_IP=<ip-da-vps>`, depois
   `docker compose up -d --build`. Põe a 8080 atrás de domínio com **TLS** (o browser
   só libera o mic em HTTPS) e abre **UDP 50000–50010** no firewall.
 - **Palworld de teste:** `.env` com as chaves R2 **novas**, depois

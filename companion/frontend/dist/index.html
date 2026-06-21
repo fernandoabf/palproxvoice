@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PalProxVoice Companion</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <div class="wrap">
+    <h3>PalProxVoice Companion</h3>
+
+    <div class="row">
+      <button id="go">Entrar</button>
+      <button id="leave" disabled>Sair</button>
+      <span id="conn" class="badge off">desconectado</span>
+    </div>
+
+    <canvas id="stage" width="688" height="240"></canvas>
+    <div id="status">—</div>
+
+    <details id="cfgSection">
+      <summary>Configurações</summary>
+      <div class="cfg">
+        <label>Server URL
+          <input id="cfgServer" type="text" placeholder="https://servidor.com  ou  ws://127.0.0.1:8080">
+        </label>
+        <label>Senha
+          <input id="cfgPassword" type="password" placeholder="VOICE_PASSWORD">
+        </label>
+        <label>Alcance da voz (metros)
+          <input id="cfgRange" type="number" min="1" max="500" step="1" value="50">
+        </label>
+        <label>Volume
+          <input id="cfgVolume" type="range" min="0" max="2" step="0.05" value="1">
+          <span id="cfgVolumeVal" class="muted">1.00</span>
+        </label>
+        <div class="row">
+          <button id="cfgSave">Salvar</button>
+          <span id="cfgSaved" class="muted"></span>
+        </div>
+      </div>
+    </details>
+
+    <div id="log"></div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

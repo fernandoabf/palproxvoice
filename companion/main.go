@@ -1,0 +1,80 @@
+package main
+
+import (
+	"context"
+	"embed"
+	"os"
+	"path/filepath"
+	"time"
+
+	"github.com/wailsapp/wails/v2"
+	"github.com/wailsapp/wails/v2/pkg/options"
+	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+	"github.com/wailsapp/wails/v2/pkg/options/windows"
+	"github.com/wailsapp/wails/v2/pkg/runtime"
+)
+
+//go:embed all:frontend/dist
+var assets embed.FS
+
+func main() {
+	app := NewApp()
+
+	err := wails.Run(&options.App{
+		Title:  "PalProxVoice Companion",
+		Width:  800,
+		Height: 600,
+		AssetServer: &assetserver.Options{
+			Assets: assets,
+		},
+		BackgroundColour: &options.RGBA{R: 27, G: 38, B: 54, A: 1},
+		OnStartup:        app.startup,
+		OnShutdown:       app.shutdown,
+		Bind: []interface{}{
+			app,
+		},
+		Windows: &windows.Options{
+			WebviewIsTransparent: false,
+			WindowIsTranslucent:  false,
+		},
+	})
+
+	if err != nil {
+		println("Error:", err.Error())
+	}
+}
+
+// startup is called when the app boots. It stores the context for later
+// EventsEmit calls and kicks off the position listener goroutine.
+func (a *App) startup(ctx context.Context) {
+	a.ctx = ctx
+	go a.positionListener()
+}
+
+// shutdown is called when the app closes.
+func (a *App) shutdown(ctx context.Context) {
+	// nothing to clean up for now
+}
+
+// positionListener reads %TEMP%/palproxvoice_pos.txt every 50ms and emits the
+// "pos" event to the frontend whenever the line changes.
+func (a *App) positionListener() {
+	posFile := filepath.Join(os.TempDir(), "palproxvoice_pos.txt")
+
+	var lastPos string
+	ticker := time.NewTicker(50 * time.Millisecond)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		data, err := os.ReadFile(posFile)
+		if err != nil {
+			continue // file not created yet, or was removed
+		}
+
+		pos := string(data)
+		if pos != lastPos {
+			lastPos = pos
+			runtime.EventsEmit(a.ctx, "pos", pos)
+		}
+	}
+}

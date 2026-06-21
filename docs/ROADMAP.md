@@ -18,8 +18,8 @@ Absorve a bridge e o navegador num **app único** (Wails — Go + webview). Buil
 
 | Fase | Ideia | Status |
 |------|-------|--------|
-| 1 | **Consolidar**: backend lê o arquivo direto (bridge some) + janela própria. Reaproveita o áudio que já funciona. | a fazer |
-| 2 | **Config + auto-connect** (servidor, senha, alcance, volume; conecta sozinho). | a fazer |
+| 1 | **Consolidar**: backend lê o arquivo direto (bridge some) + janela própria. Reaproveita o áudio que já funciona. | escrito ✓ (validar no build Windows) |
+| 2 | **Config + auto-connect** (servidor, senha, alcance, volume; conecta sozinho). | escrito ✓ (validar no build Windows) |
 | 3 | **Overlay** (always-on-top, quem fala, push-to-talk, mute) — o feeling Simple Voice Chat. | a fazer |
 | 4 | **Empacotar** (.exe único, auto-start opcional, instalar pra galera). | a fazer |
 
