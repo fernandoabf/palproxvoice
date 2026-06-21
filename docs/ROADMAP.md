@@ -19,6 +19,8 @@ Núcleo pronto; tudo abaixo é conforto:
 - **Fechar a voz ao sair do servidor** — posição parada por N s → desconecta sozinho.
 - **Escolher microfone + saída de áudio** — na config.
 - **Instalador único** — UE4SS v3.0.1 + mod + companion num clique (hoje: 2 downloads + extrair).
+- **Nomes reais** _(depois)_ — o mod escreve o nome do player; peers aparecem com nome. Mais simples que REST.
+- **Presença autoritativa via REST** _(depois)_ — checar conexão real pela API do servidor; precisa de auth + correlação nome↔id de voz.
 - ~~Plano B (REST, sem UE4SS)~~ — **parado por enquanto**.
 
 ## Decisões travadas
