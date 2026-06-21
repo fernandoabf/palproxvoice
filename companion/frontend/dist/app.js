@@ -79,6 +79,7 @@ function onPos(data) {
 
 // ao entrar no jogo: tenta auto-detectar o IP (Direct Connect); senao, servidor salvo
 async function onGameEnter() {
+  if (ws) return; // ja conectado -> nao abre uma 2a conexao
   if (cfg.autoDetect) {
     let ip = '';
     try { ip = await window.go.main.App.GameServerIP(); } catch (_) {}
@@ -160,12 +161,18 @@ async function start(s) {
   ws.onopen = async () => {
     ws.send(JSON.stringify({ event: 'auth', data: s.password }));
     try {
-      const constraints = { audio: cfg.micDeviceId ? { deviceId: { exact: cfg.micDeviceId } } : true };
-      const mic = await navigator.mediaDevices.getUserMedia(constraints);
+      let mic;
+      try {
+        const c = { audio: cfg.micDeviceId ? { deviceId: { exact: cfg.micDeviceId } } : true };
+        mic = await navigator.mediaDevices.getUserMedia(c);
+      } catch (e1) {
+        log('mic escolhido indisponível — usando o padrão', 'warn');
+        mic = await navigator.mediaDevices.getUserMedia({ audio: true }); // fallback
+      }
       mic.getTracks().forEach(t => pc.addTrack(t, mic));
       populateDevices();
-      log('mic ok');
-    } catch (err) { log('ERRO microfone: ' + err, 'err'); }
+      log('mic ok', 'ok');
+    } catch (err) { log('sem microfone (' + err.name + ') — você ouve, mas não fala', 'err'); }
     setConn('on');
     posTimer = setInterval(() => {
       if (ws && ws.readyState === 1)
