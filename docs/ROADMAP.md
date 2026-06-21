@@ -21,6 +21,7 @@ Núcleo pronto; tudo abaixo é conforto:
 - **Escolher microfone + saída de áudio** — na config.
 - **Instalador único** — UE4SS v3.0.1 + mod + companion num clique (hoje: 2 downloads + extrair).
 - **Nomes reais** _(depois)_ — o mod escreve o nome do player; peers aparecem com nome. Mais simples que REST.
+- **Auto-detectar IP** ✓ _(Direct Connect)_ — companion lê `InputIPAddress` do `GameUserSettings.ini` → conecta em `ws://<IP>:8765`. Só Direct Connect (lista do Steam não atualiza esse campo; senha não fica salva, sem `Pal.log`); **fallback = seletor manual**.
 - ~~Plano B (REST, sem UE4SS)~~ — **parado por enquanto**.
 
 ## Decisões travadas
