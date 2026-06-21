@@ -46,6 +46,6 @@ jobs:
         with:
           files: ./companion/build/bin/palproxvoice.exe
           draft: false
-          prerelease: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
