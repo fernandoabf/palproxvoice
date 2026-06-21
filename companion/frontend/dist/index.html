@@ -3,58 +3,87 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PalProxVoice Companion</title>
-<link rel="stylesheet" href="app.css">
+<title>PalProxVoice</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 560px; margin: 24px auto; padding: 0 16px;
+         background: #1b2636; color: #cdd6e0; }
+  h3 { margin: 0 0 4px; }
+  .row { display: flex; gap: 8px; align-items: center; margin: 8px 0; flex-wrap: wrap; }
+  input, button, select { font-size: 15px; padding: 7px; border-radius: 6px; border: 1px solid #3a4a60;
+         background: #243349; color: #e6edf5; }
+  button { cursor: pointer; }
+  label { display: block; margin: 6px 0; font-size: 14px; }
+  label input, label select { width: 100%; box-sizing: border-box; margin-top: 3px; }
+  .muted { color: #8aa0b8; font-size: 13px; }
+  .badge { padding: 3px 9px; border-radius: 999px; font-size: 13px; }
+  .badge.on { background: #1f5132; color: #b7f7cf; }
+  .badge.off { background: #4a2a2a; color: #f2c2c2; }
+  #fallback { display: none; background: #3a2a2a; border: 1px solid #a55; border-radius: 8px;
+         padding: 12px; margin: 10px 0; }
+  #fallback.show { display: block; }
+  #stage { border: 1px solid #2c3a52; background: #11192a; display: block; margin-top: 10px; border-radius: 6px; }
+  #log { margin-top: 10px; white-space: pre-wrap; font-family: monospace; font-size: 12px; color: #7e93ab; max-height: 120px; overflow: auto; }
+  details > summary { cursor: pointer; margin-top: 10px; color: #9fb4cc; }
+</style>
 </head>
 <body>
-  <div class="wrap">
-    <h3>PalProxVoice Companion</h3>
-
-    <div class="row">
-      <button id="go">Entrar</button>
-      <button id="leave" disabled>Sair</button>
-      <span id="conn" class="badge off">desconectado</span>
-    </div>
-
-    <canvas id="stage" width="688" height="240"></canvas>
-    <div id="status">—</div>
-
-    <details id="cfgSection">
-      <summary>Configurações</summary>
-      <div class="cfg">
-        <label>Server URL
-          <input id="cfgServer" type="text" placeholder="https://servidor.com  ou  ws://127.0.0.1:8080">
-        </label>
-        <label>Senha
-          <input id="cfgPassword" type="password" placeholder="VOICE_PASSWORD">
-        </label>
-        <label>Alcance da voz (metros)
-          <input id="cfgRange" type="number" min="1" max="500" step="1" value="50">
-        </label>
-        <label>Volume
-          <input id="cfgVolume" type="range" min="0" max="2" step="0.05" value="1">
-          <span id="cfgVolumeVal" class="muted">1.00</span>
-        </label>
-        <label>Microfone
-          <select id="cfgMic"></select>
-        </label>
-        <label>Saída de áudio
-          <select id="cfgOutput"></select>
-        </label>
-        <div class="row">
-          <button id="cfgRefreshDevices" type="button">Atualizar dispositivos</button>
-          <span id="cfgDevHint" class="muted"></span>
-        </div>
-        <div class="row">
-          <button id="cfgSave">Salvar</button>
-          <span id="cfgSaved" class="muted"></span>
-        </div>
-      </div>
-    </details>
-
-    <div id="log"></div>
+  <h3>PalProxVoice <span id="srvName" class="muted"></span></h3>
+  <div class="row">
+    <span id="conn" class="badge off">desconectado</span>
+    <span id="status" class="muted">—</span>
   </div>
 
+  <!-- fallback: so aparece se a conexao falhar -->
+  <div id="fallback">
+    <b>Não consegui conectar</b> ao servidor <span id="fbName"></span>.
+    <div class="row">
+      <button id="fbConfig">Configurar este servidor</button>
+      <button id="fbIgnore">Ignorar</button>
+    </div>
+  </div>
+
+  <canvas id="stage" width="528" height="200"></canvas>
+
+  <!-- config: colapsada/escondida por padrao -->
+  <details id="cfgSection">
+    <summary>Configurações</summary>
+
+    <label><input id="cfgAutoDetect" type="checkbox" style="width:auto"> <b>Auto</b>: detectar servidor do jogo (Direct Connect)</label>
+    <div class="row" id="autoRow">
+      <span class="muted">porta</span> <input id="cfgAutoPort" type="number" value="8765" style="width:90px">
+      <span class="muted">senha</span> <input id="cfgAutoPassword" type="password" placeholder="(vazio = sem senha)" style="flex:1">
+    </div>
+
+    <div class="muted" style="margin-top:8px">Servidores salvos (fallback / lista do Steam):</div>
+    <div class="row">
+      <select id="cfgServerSel" style="flex:1"></select>
+      <button id="cfgAdd" type="button">+ Novo</button>
+      <button id="cfgDel" type="button">Remover</button>
+    </div>
+
+    <label>Nome do servidor <input id="cfgName" type="text" placeholder="OurWorld"></label>
+    <label>Server URL <input id="cfgServer" type="text" placeholder="https://voz.seudominio.com"></label>
+    <label>Senha <input id="cfgPassword" type="password" placeholder="VOICE_PASSWORD"></label>
+    <label>Alcance da voz (metros) <input id="cfgRange" type="number" min="1" max="500" step="1" value="50"></label>
+
+    <label><input id="cfgAuto" type="checkbox" style="width:auto"> Conectar automaticamente ao entrar no jogo</label>
+
+    <hr style="border-color:#2c3a52">
+    <label>Microfone <select id="cfgMic"></select></label>
+    <label>Saída de áudio <select id="cfgOutput"></select></label>
+    <label>Volume <input id="cfgVolume" type="range" min="0" max="2" step="0.05" value="1"> <span id="cfgVolumeVal" class="muted">1.00</span></label>
+    <div class="row">
+      <button id="cfgRefreshDevices" type="button">Atualizar dispositivos</button>
+      <span id="cfgDevHint" class="muted"></span>
+    </div>
+
+    <div class="row">
+      <button id="cfgSave">Salvar</button>
+      <span id="cfgSaved" class="muted"></span>
+    </div>
+  </details>
+
+  <div id="log"></div>
   <script src="app.js"></script>
 </body>
 </html>

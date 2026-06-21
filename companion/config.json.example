@@ -1,0 +1,11 @@
+{
+  "servers": [
+    { "name": "OurWorld", "url": "https://voz.seudominio.com", "password": "SUA_SENHA", "voiceRangeMeters": 50 }
+  ],
+  "selected": 0,
+  "volume": 1.0,
+  "autoConnect": true,
+  "autoDetect": false,
+  "autoPort": 8765,
+  "autoPassword": ""
+}
