@@ -50,17 +50,20 @@ jobs:
           Copy-Item -Recurse -Force mod/PalProxVoice bundle/Mods/PalProxVoice
           Compress-Archive -Path bundle/* -DestinationPath PalProxVoice-UE4SS.zip -Force
 
-      # Instalador "1 clique": junta UE4SS+mod (bundle) + companion + config + scripts
-      - name: Montar instalador
+      # Instalador .exe (Inno Setup): UE4SS+mod no jogo + companion + config + auto-start
+      - name: Instalar Inno Setup
+        run: choco install innosetup --no-progress -y
+        shell: pwsh
+
+      - name: Montar e compilar instalador (.exe)
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path inst | Out-Null
-          Copy-Item installer/install.ps1 inst/
-          Copy-Item installer/Instalar.bat inst/
-          Copy-Item PalProxVoice-UE4SS.zip inst/
+          New-Item -ItemType Directory -Force -Path inst\ue4ss | Out-Null
+          Expand-Archive PalProxVoice-UE4SS.zip -DestinationPath inst\ue4ss -Force
           Copy-Item companion/build/bin/palproxvoice.exe inst/
           Copy-Item companion/config.json.example inst/config.json
-          Compress-Archive -Path inst/* -DestinationPath PalProxVoice-Installer.zip -Force
+          Copy-Item installer/palproxvoice.iss inst/
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" inst\palproxvoice.iss
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -70,7 +73,7 @@ jobs:
             ./companion/build/bin/palproxvoice.exe
             ./PalProxVoice-mod.zip
             ./PalProxVoice-UE4SS.zip
-            ./PalProxVoice-Installer.zip
+            ./inst/PalProxVoice-Setup.exe
           retention-days: 30
 
       - name: Create GitHub Release and attach files
@@ -81,7 +84,7 @@ jobs:
             ./companion/build/bin/palproxvoice.exe
             ./PalProxVoice-mod.zip
             ./PalProxVoice-UE4SS.zip
-            ./PalProxVoice-Installer.zip
+            ./inst/PalProxVoice-Setup.exe
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
         env:

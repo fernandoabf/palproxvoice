@@ -20,10 +20,19 @@ var assets embed.FS
 func main() {
 	app := NewApp()
 
+	// auto-start passa "-min" -> abre minimizado (escondido na barra de tarefas)
+	startState := options.Normal
+	for _, a := range os.Args[1:] {
+		if a == "-min" || a == "--min" {
+			startState = options.Minimised
+		}
+	}
+
 	err := wails.Run(&options.App{
-		Title:  "PalProxVoice Companion",
-		Width:  800,
-		Height: 600,
+		Title:            "PalProxVoice Companion",
+		Width:            800,
+		Height:           600,
+		WindowStartState: startState,
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},
