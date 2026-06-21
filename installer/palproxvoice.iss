@@ -31,6 +31,11 @@ Source: "config.json"; DestDir: "{localappdata}\PalProxVoice"; Flags: onlyifdoes
 ; UE4SS v3.0.1 + mod -> a pasta Binaries certa do jogo (Win64 ou WinGDK, em runtime)
 Source: "ue4ss\*"; DestDir: "{code:GetBinDir}"; Flags: recursesubdirs createallsubdirs ignoreversion
 
+[Registry]
+; Windows abaixa todos os sons quando o mic ativa ("ducking" de comunicacao).
+; 3 = "nao fazer nada". (pega de vez apos reiniciar/relogar)
+Root: HKCU; Subkey: "Software\Microsoft\Multimedia\Audio"; ValueType: dword; ValueName: "UserDuckingPreference"; ValueData: "3"
+
 [Icons]
 ; auto-start: sobe minimizado com o Windows
 Name: "{userstartup}\PalProxVoice"; Filename: "{localappdata}\PalProxVoice\palproxvoice.exe"; Parameters: "-min"; WorkingDir: "{localappdata}\PalProxVoice"

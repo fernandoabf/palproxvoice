@@ -20,7 +20,8 @@ type Server struct {
 type Config struct {
 	Servers        []Server `json:"servers"`
 	Selected       int      `json:"selected"`
-	Volume         float64  `json:"volume"`
+	Volume         float64  `json:"volume"`      // volume de saida (o que voce ouve)
+	InputVolume    float64  `json:"inputVolume"` // volume do microfone (o que voce manda)
 	MicDeviceID    string   `json:"micDeviceId"`
 	OutputDeviceID string   `json:"outputDeviceId"`
 	AutoConnect    bool     `json:"autoConnect"`
@@ -68,7 +69,7 @@ func NewApp() *App {
 }
 
 func defaultConfig() Config {
-	return Config{Servers: []Server{}, Selected: 0, Volume: 1.0, AutoConnect: true, AutoDetect: true, AutoPort: 8765}
+	return Config{Servers: []Server{}, Selected: 0, Volume: 1.0, InputVolume: 1.0, AutoConnect: true, AutoDetect: true, AutoPort: 8765}
 }
 
 // configPath = %APPDATA%/PalProxVoice/config.json (config salva pelo usuario).

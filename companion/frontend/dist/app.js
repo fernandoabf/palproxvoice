@@ -9,7 +9,9 @@ let posFromGame = false;
 let inGame = false;
 
 let voiceRangeMeters = 50;
-let masterVolume = 1.0;
+let masterVolume = 1.0;      // volume de saida
+let inputVol = 1.0;          // volume do microfone (entrada)
+let micMuted = false, deafened = false, micGain = null;
 
 // config completa (lista de servidores + global)
 let cfg = { servers: [], selected: 0, volume: 1.0, micDeviceId: '', outputDeviceId: '', autoConnect: true };
@@ -62,6 +64,7 @@ function refreshStatus() {
   $('go').hidden = (connState !== 'off');
   $('leave').hidden = (connState === 'off');
   $('connMeta').hidden = (connState !== 'on');
+  $('audioCtl').hidden = (connState !== 'on');
 }
 function updatePlayers() { $('mPlayers').textContent = Object.values(peers).filter(p => p.panner).length; }
 refreshStatus();
@@ -137,7 +140,7 @@ async function start(s) {
   if (!actx) {
     actx = new (window.AudioContext || window.webkitAudioContext)();
     listener = actx.listener;
-    masterGain = actx.createGain(); masterGain.gain.value = masterVolume; masterGain.connect(actx.destination);
+    masterGain = actx.createGain(); masterGain.gain.value = deafened ? 0 : masterVolume; masterGain.connect(actx.destination);
   }
   if (actx.state === 'suspended') { try { await actx.resume(); } catch (_) {} }
   if (cfg.outputDeviceId && actx.setSinkId) { try { await actx.setSinkId(cfg.outputDeviceId); } catch (_) {} }
@@ -169,7 +172,12 @@ async function start(s) {
         log('mic escolhido indisponível — usando o padrão', 'warn');
         mic = await navigator.mediaDevices.getUserMedia({ audio: true }); // fallback
       }
-      mic.getTracks().forEach(t => pc.addTrack(t, mic));
+      // processa o mic pelo Web Audio -> volume de entrada + mute
+      const micSrc = actx.createMediaStreamSource(mic);
+      micGain = actx.createGain(); micGain.gain.value = micMuted ? 0 : inputVol;
+      const micDest = actx.createMediaStreamDestination();
+      micSrc.connect(micGain).connect(micDest);
+      micDest.stream.getAudioTracks().forEach(t => pc.addTrack(t, micDest.stream));
       populateDevices();
       log('mic ok', 'ok');
     } catch (err) { log('sem microfone (' + err.name + ') — você ouve, mas não fala', 'err'); }
@@ -218,7 +226,15 @@ function stop() {
 }
 
 // ----- config / servidores -----
-function applyVolume(v) { masterVolume = v; if (masterGain) masterGain.gain.value = v; }
+function applyOutput() { if (masterGain) masterGain.gain.value = deafened ? 0 : masterVolume; }
+function applyInput()  { if (micGain) micGain.gain.value = micMuted ? 0 : inputVol; }
+function applyVolume(v)   { masterVolume = v; applyOutput(); }
+function applyInputVol(v) { inputVol = v; applyInput(); }
+function updateAudioBtns() {
+  const mm = $('muteMic'), df = $('deafen');
+  mm.textContent = micMuted ? '🔇 Mic mutado' : '🎤 Mic'; mm.classList.toggle('muted', micMuted);
+  df.textContent = deafened ? '🔇 Sem som' : '🔊 Som';   df.classList.toggle('muted', deafened);
+}
 function applyRange(m) { voiceRangeMeters = m; for (const id in peers) { const p = peers[id]; if (p.panner) p.panner.maxDistance = m; } }
 
 function renderServerList() {
@@ -263,6 +279,7 @@ function gatherConfig() {
   if (cfg.servers.length === 0) cfg.servers.push(readServerFields());
   else cfg.servers[cfg.selected] = readServerFields();
   cfg.volume = parseFloat($('cfgVolume').value);
+  cfg.inputVolume = parseFloat($('cfgInputVol').value);
   cfg.micDeviceId = $('cfgMic').value || '';
   cfg.outputDeviceId = $('cfgOutput').value || '';
   cfg.autoConnect = $('cfgAuto').checked;
@@ -274,6 +291,9 @@ function gatherConfig() {
 
 // ----- UI wiring -----
 $('cfgVolume').addEventListener('input', e => { const v = parseFloat(e.target.value); $('cfgVolumeVal').textContent = Math.round(v*100)+'%'; applyVolume(v); });
+$('cfgInputVol').addEventListener('input', e => { const v = parseFloat(e.target.value); $('cfgInputVolVal').textContent = Math.round(v*100)+'%'; applyInputVol(v); });
+$('muteMic').onclick = () => { micMuted = !micMuted; applyInput(); updateAudioBtns(); };
+$('deafen').onclick  = () => { deafened = !deafened; applyOutput(); updateAudioBtns(); };
 $('cfgRefreshDevices').addEventListener('click', refreshDevices);
 $('cfgServerSel').addEventListener('change', e => { cfg.selected = parseInt(e.target.value) || 0; fillServerFields(selectedServer()); });
 $('cfgAdd').addEventListener('click', () => { cfg.servers.push({ name:'Novo', url:'', password:'', voiceRangeMeters:50 }); cfg.selected = cfg.servers.length-1; renderServerList(); fillServerFields(selectedServer()); });
@@ -300,6 +320,8 @@ $('leave').onclick = stop;
     if (!cfg.servers) cfg.servers = [];
     masterVolume = (cfg.volume == null) ? 1.0 : cfg.volume;
     $('cfgVolume').value = masterVolume; $('cfgVolumeVal').textContent = Math.round(masterVolume*100)+'%';
+    inputVol = (cfg.inputVolume == null) ? 1.0 : cfg.inputVolume;
+    $('cfgInputVol').value = inputVol; $('cfgInputVolVal').textContent = Math.round(inputVol*100)+'%';
     $('cfgAuto').checked = cfg.autoConnect !== false;
     $('cfgAutoDetect').checked = !!cfg.autoDetect;
     $('cfgAutoPort').value = cfg.autoPort || 8765;
