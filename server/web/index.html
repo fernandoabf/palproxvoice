@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PalProxVoice — teste local</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 720px; margin: 32px auto; padding: 0 16px; }
+  input, button { font-size: 16px; padding: 8px; }
+  #log { margin-top: 12px; white-space: pre-wrap; font-family: monospace; font-size: 12px; color: #555; }
+  #stage { border: 1px solid #ccc; background: #fafafa; display: block; margin-top: 12px; }
+  kbd { background:#eee; border:1px solid #ccc; border-radius:3px; padding:0 4px; font-family:monospace; }
+</style>
+</head>
+<body>
+  <h3>PalProxVoice — companion</h3>
+  <p>Com a <b>bridge</b> rodando, tua posição vem do <b>jogo</b>. Sem ela, move no teste com
+     <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> + <kbd>←</kbd><kbd>→</kbd>.
+     Mesma senha, <b>Entrar</b> (de fone!).</p>
+  <input id="pw" placeholder="senha (VOICE_PASSWORD)" value="test">
+  <button id="go">Entrar</button>
+  <canvas id="stage" width="688" height="240"></canvas>
+  <div id="status">—</div>
+  <div id="log"></div>
+
+<script>
+// ----- world: posicao em CENTIMETROS (mesmo formato do mod M1: x,y,z,yaw) -----
+const me = { x: 0, y: 0, z: 0, yaw: 0 };  // yaw em graus
+const STEP = 100;        // 1 m por tecla
+const TURN = 15;         // graus por tecla
+const CM = 100;          // cm -> m na hora de espacializar
+const peers = {};        // id -> { x,y,z,yaw, panner, audio }
+let bridgeOn = false;    // true quando a posicao vem do jogo (via bridge local)
+
+const logEl = document.getElementById('log');
+const log = m => { logEl.textContent += m + "\n"; };
+
+// yaw(graus) -> vetor "pra frente" no plano X-Z do Web Audio. Self-check abaixo.
+const fwd = yaw => { const r = yaw * Math.PI / 180; return [Math.cos(r), 0, Math.sin(r)]; };
+(() => { const [fx,,fz] = fwd(0); console.assert(Math.abs(fx-1)<1e-9 && Math.abs(fz)<1e-9, "fwd(0) deve ser +X"); })();
+
+let actx, listener;
+function audioPos(p) { return [p.x/CM, p.z/CM, p.y/CM]; }  // game(x,y,z) -> audio(x=X, y=altura=Z, z=Y)
+
+function placeListener() {
+  if (!listener) return;
+  const [ax, ay, az] = audioPos(me);
+  const [fx, fy, fz] = fwd(me.yaw);
+  if (listener.positionX) {
+    listener.positionX.value = ax; listener.positionY.value = ay; listener.positionZ.value = az;
+    listener.forwardX.value = fx; listener.forwardY.value = fy; listener.forwardZ.value = fz;
+    listener.upX.value = 0; listener.upY.value = 1; listener.upZ.value = 0;
+  } else { // API antiga
+    listener.setPosition(ax, ay, az);
+    listener.setOrientation(fx, fy, fz, 0, 1, 0);
+  }
+}
+function placePanner(p) {
+  if (!p.panner) return;
+  const [ax, ay, az] = audioPos(p);
+  if (p.panner.positionX) { p.panner.positionX.value = ax; p.panner.positionY.value = ay; p.panner.positionZ.value = az; }
+  else p.panner.setPosition(ax, ay, az);
+}
+
+// ----- desenho (top-down) so pra enxergar quem ta onde -----
+const cv = document.getElementById('stage'), ctx = cv.getContext('2d');
+function draw() {
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  const cx = cv.width/2, cy = cv.height/2, S = 0.03; // px/cm; vista centrada em VOCE
+  const dot = (p, color, label) => {
+    const X = cx + (p.x - me.x)*S, Y = cy + (p.y - me.y)*S; // relativo a voce
+    ctx.fillStyle = color; ctx.beginPath(); ctx.arc(X, Y, 7, 0, 7); ctx.fill();
+    const [fx,,fz] = fwd(p.yaw);
+    ctx.strokeStyle = color; ctx.beginPath(); ctx.moveTo(X, Y); ctx.lineTo(X+fx*16, Y+fz*16); ctx.stroke();
+    ctx.fillStyle = '#333'; ctx.font = '11px monospace'; ctx.fillText(label, X+10, Y-8);
+  };
+  for (const id in peers) if (peers[id].panner) dot(peers[id], '#c0392b', id.slice(0,4));
+  dot(me, '#2980b9', 'voce');
+  document.getElementById('status').textContent =
+    `voce: ${me.x.toFixed(0)}, ${me.y.toFixed(0)}, ${me.z.toFixed(0)}  yaw ${me.yaw.toFixed(0)}` +
+    (bridgeOn ? '   [posicao: JOGO]' : '   [posicao: WASD]');
+  requestAnimationFrame(draw);
+}
+requestAnimationFrame(draw);
+
+// ----- posicao real do jogo via bridge local (substitui o WASD se estiver rodando) -----
+setInterval(async () => {
+  try {
+    const r = await fetch('http://127.0.0.1:47475/pos', { cache: 'no-store' });
+    if (!r.ok) { bridgeOn = false; return; }
+    const t = (await r.text()).trim();
+    if (!t) return;
+    const [x, y, z, yaw] = t.split(',').map(Number);
+    if ([x, y, z, yaw].some(Number.isNaN)) return;
+    me.x = x; me.y = y; me.z = z; me.yaw = yaw;
+    bridgeOn = true;
+    placeListener();
+  } catch (_) { bridgeOn = false; }
+}, 50);
+
+// ----- controles -----
+addEventListener('keydown', e => {
+  let h = true;
+  switch (e.key.toLowerCase()) {
+    case 'w': me.y -= STEP; break;
+    case 's': me.y += STEP; break;
+    case 'a': me.x -= STEP; break;
+    case 'd': me.x += STEP; break;
+    case 'arrowleft':  me.yaw = (me.yaw - TURN + 360) % 360; break;
+    case 'arrowright': me.yaw = (me.yaw + TURN) % 360; break;
+    default: h = false;
+  }
+  if (h) { e.preventDefault(); placeListener(); }
+});
+
+document.getElementById('go').onclick = start;
+
+async function start() {
+  document.getElementById('go').disabled = true;
+  actx = new (window.AudioContext || window.webkitAudioContext)();
+  listener = actx.listener;
+  placeListener();
+
+  const wsURL = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws';
+  const pw = document.getElementById('pw').value;
+  const ws = new WebSocket(wsURL);
+  const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+
+  // cada track que chega (1 por peer) -> PannerNode HRTF na posicao daquele peer
+  pc.ontrack = e => {
+    const id = e.streams[0].id;
+    if (peers[id] && peers[id].panner) return;
+    const src = actx.createMediaStreamSource(e.streams[0]);
+    const panner = new PannerNode(actx, {
+      panningModel: 'HRTF', distanceModel: 'inverse',
+      refDistance: 2, maxDistance: 60, rolloffFactor: 1,
+    });
+    src.connect(panner).connect(actx.destination);
+    // <audio> mudo so pra alguns browsers manterem o stream "ativo"
+    const a = new Audio(); a.muted = true; a.srcObject = e.streams[0];
+    peers[id] = Object.assign(peers[id] || { x:0,y:0,z:0,yaw:0 }, { panner, audio: a });
+    placePanner(peers[id]);
+    log('ouvindo peer ' + id.slice(0,8));
+  };
+
+  pc.onicecandidate = e => {
+    if (e.candidate) ws.send(JSON.stringify({ event: 'candidate', data: JSON.stringify(e.candidate) }));
+  };
+
+  ws.onopen = async () => {
+    ws.send(JSON.stringify({ event: 'auth', data: pw }));
+    const mic = await navigator.mediaDevices.getUserMedia({ audio: true });
+    mic.getTracks().forEach(t => pc.addTrack(t, mic));
+    log('mic ok, conectando...');
+    // manda minha posicao 10x/s (mesmo caminho do mod M1 -> companion -> server)
+    setInterval(() => {
+      if (ws.readyState === 1)
+        ws.send(JSON.stringify({ event: 'pos', data: `${me.x.toFixed(1)},${me.y.toFixed(1)},${me.z.toFixed(1)},${me.yaw.toFixed(1)}` }));
+    }, 100);
+  };
+
+  ws.onmessage = async ev => {
+    const m = JSON.parse(ev.data);
+    if (m.event === 'error')  { log('ERRO: ' + m.data); return; }
+    if (m.event === 'hello')  { log('conectado. meu id = ' + m.data.slice(0,8)); return; }
+    if (m.event === 'offer')  {
+      await pc.setRemoteDescription(JSON.parse(m.data));
+      const ans = await pc.createAnswer();
+      await pc.setLocalDescription(ans);
+      ws.send(JSON.stringify({ event: 'answer', data: JSON.stringify(ans) }));
+    }
+    if (m.event === 'candidate') { try { await pc.addIceCandidate(JSON.parse(m.data)); } catch (_) {} }
+    if (m.event === 'pos') { // "x,y,z,yaw" de outro player
+      const [x, y, z, yaw] = m.data.split(',').map(Number);
+      const p = peers[m.id] = Object.assign(peers[m.id] || {}, { x, y, z, yaw });
+      placePanner(p);
+    }
+  };
+
+  ws.onclose = () => log('ws fechou');
+}
+</script>
+</body>
+</html>
