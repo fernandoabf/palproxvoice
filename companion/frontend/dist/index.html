@@ -5,87 +5,163 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PalProxVoice</title>
 <style>
-  body { font-family: system-ui, sans-serif; max-width: 560px; margin: 24px auto; padding: 0 16px;
-         background: #1b2636; color: #cdd6e0; }
-  h3 { margin: 0 0 4px; }
-  .row { display: flex; gap: 8px; align-items: center; margin: 8px 0; flex-wrap: wrap; }
-  input, button, select { font-size: 15px; padding: 7px; border-radius: 6px; border: 1px solid #3a4a60;
-         background: #243349; color: #e6edf5; }
-  button { cursor: pointer; }
-  label { display: block; margin: 6px 0; font-size: 14px; }
-  label input, label select { width: 100%; box-sizing: border-box; margin-top: 3px; }
-  .muted { color: #8aa0b8; font-size: 13px; }
-  .badge { padding: 3px 9px; border-radius: 999px; font-size: 13px; }
-  .badge.on { background: #1f5132; color: #b7f7cf; }
-  .badge.off { background: #4a2a2a; color: #f2c2c2; }
-  #fallback { display: none; background: #3a2a2a; border: 1px solid #a55; border-radius: 8px;
-         padding: 12px; margin: 10px 0; }
-  #fallback.show { display: block; }
-  #stage { border: 1px solid #2c3a52; background: #11192a; display: block; margin-top: 10px; border-radius: 6px; }
-  #log { margin-top: 10px; white-space: pre-wrap; font-family: monospace; font-size: 12px; color: #7e93ab; max-height: 120px; overflow: auto; }
-  details > summary { cursor: pointer; margin-top: 10px; color: #9fb4cc; }
+  :root{
+    --bg:#0e1117; --panel:#161b22; --line:#262d38; --line2:#303a48;
+    --txt:#e6edf3; --muted:#8b949e; --faint:#6e7a8a;
+    --accent:#4493f8; --good:#3fb950; --bad:#f06f6f; --radius:12px;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0; font-family:system-ui,-apple-system,"Segoe UI",sans-serif;
+    background:var(--bg); color:var(--txt); -webkit-font-smoothing:antialiased;
+    display:flex; justify-content:center;
+  }
+  .app{width:100%;max-width:440px;padding:22px 20px;display:flex;flex-direction:column;gap:20px}
+
+  /* header */
+  header{display:flex;align-items:center;justify-content:space-between}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:650;font-size:15px;letter-spacing:.2px}
+  .brand .mark{width:26px;height:26px;border-radius:8px;background:linear-gradient(145deg,var(--accent),#6f7bff);
+        display:grid;place-items:center;font-size:14px}
+  .badge{font-size:11.5px;font-weight:600;padding:4px 10px;border-radius:999px;display:flex;align-items:center;gap:6px}
+  .badge::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
+  .badge.on{color:var(--good);background:rgba(63,185,80,.12)}
+  .badge.off{color:var(--faint);background:rgba(110,122,138,.12)}
+
+  /* hero */
+  .hero{display:flex;flex-direction:column;align-items:center;text-align:center;gap:6px;padding:14px 0 6px}
+  .srv{font-size:13px;color:var(--accent);font-weight:600;min-height:16px}
+  .status{font-size:15px;color:var(--muted)}
+  .connect{margin-top:16px;font:inherit;font-size:15px;font-weight:650;color:#fff;border:none;cursor:pointer;
+        padding:13px 0;width:100%;border-radius:11px;background:var(--accent);transition:.15s}
+  .connect:hover{filter:brightness(1.08)}
+  .connect.alt{background:transparent;border:1px solid var(--line2);color:var(--muted)}
+  .connect.alt:hover{border-color:var(--bad);color:var(--bad)}
+  [hidden]{display:none!important}
+
+  /* alert */
+  #fallback{background:rgba(240,111,111,.08);border:1px solid rgba(240,111,111,.35);border-radius:var(--radius);
+        padding:13px 15px;display:flex;flex-direction:column;gap:10px;font-size:13px}
+  #fallback .row{display:flex;gap:8px}
+
+  /* links/toggles */
+  .toggle{background:none;border:none;color:var(--muted);font:inherit;font-size:13px;cursor:pointer;
+        display:flex;align-items:center;gap:7px;padding:0}
+  .toggle:hover{color:var(--txt)}
+
+  /* settings */
+  .settings{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:6px}
+  .tabs{display:flex;gap:4px;padding:4px;background:#0f141c;border-radius:9px}
+  .tab{flex:1;font:inherit;font-size:13.5px;font-weight:600;color:var(--muted);background:none;border:none;
+        padding:8px;border-radius:7px;cursor:pointer;transition:.15s}
+  .tab.active{background:var(--panel);color:var(--txt);box-shadow:0 1px 4px -2px #000}
+  .panel{padding:16px 12px 8px;display:flex;flex-direction:column;gap:13px}
+  .field{display:flex;flex-direction:column;gap:6px;font-size:12px;color:var(--muted)}
+  .field input,.field select{font:inherit;font-size:14px;color:var(--txt);background:#0f141c;
+        border:1px solid var(--line2);border-radius:9px;padding:10px 11px;width:100%;transition:.15s}
+  .field input:focus,.field select:focus{outline:none;border-color:var(--accent)}
+  .field.range{flex-direction:row;align-items:center;gap:10px}
+  .field.range input[type=range]{flex:1;accent-color:var(--accent)}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .switch{display:flex;align-items:center;gap:10px;font-size:13.5px;color:var(--txt);cursor:pointer}
+  .switch input{appearance:none;width:38px;height:22px;background:#2a3342;border-radius:999px;position:relative;cursor:pointer;transition:.2s;flex:none}
+  .switch input::after{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#fff;transition:.2s}
+  .switch input:checked{background:var(--accent)}
+  .switch input:checked::after{left:18px}
+  .sep{border:none;border-top:1px solid var(--line);margin:3px 0}
+  .rowline{display:flex;gap:8px;align-items:center}
+  .mini{font:inherit;font-size:12.5px;font-weight:600;color:var(--muted);background:none;border:1px solid var(--line2);
+        border-radius:8px;padding:7px 11px;cursor:pointer;transition:.15s;white-space:nowrap}
+  .mini:hover{border-color:var(--accent);color:var(--txt)}
+  .hint{font-size:12px;color:var(--good)}
+  .dim{font-size:11.5px;color:var(--faint)}
+  .save-row{display:flex;align-items:center;justify-content:flex-end;gap:12px;padding:6px 12px 10px}
+  .save-row button{font:inherit;font-size:14px;font-weight:650;color:#fff;background:var(--accent);border:none;
+        border-radius:9px;padding:9px 20px;cursor:pointer}
+  .save-row button:hover{filter:brightness(1.08)}
+
+  #log{font-family:ui-monospace,monospace;font-size:11px;color:var(--faint);white-space:pre-wrap;
+        background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+        padding:12px;max-height:150px;overflow:auto;line-height:1.55;margin:0}
 </style>
 </head>
 <body>
-  <h3>PalProxVoice <span id="srvName" class="muted"></span></h3>
-  <div class="row">
-    <button id="go">Conectar</button>
-    <button id="leave" disabled>Desconectar</button>
-    <span id="conn" class="badge off">desconectado</span>
-    <span id="status" class="muted">—</span>
+<div class="app">
+
+  <header>
+    <div class="brand"><span class="mark">🎙️</span> PalProxVoice</div>
+    <span id="conn" class="badge off">offline</span>
+  </header>
+
+  <div class="hero">
+    <div id="srvName" class="srv"></div>
+    <div id="status" class="status">—</div>
+    <button id="go" class="connect">Conectar</button>
+    <button id="leave" class="connect alt" hidden>Desconectar</button>
   </div>
 
-  <!-- fallback: so aparece se a conexao falhar -->
-  <div id="fallback">
-    <b>Não consegui conectar</b> ao servidor <span id="fbName"></span>.
+  <div id="fallback" hidden>
+    <div>⚠️ Não consegui conectar ao servidor <b><span id="fbName"></span></b>.</div>
     <div class="row">
-      <button id="fbConfig">Configurar este servidor</button>
-      <button id="fbIgnore">Ignorar</button>
+      <button id="fbConfig" class="mini">Configurar</button>
+      <button id="fbIgnore" class="mini">Ignorar</button>
     </div>
   </div>
 
-  <canvas id="stage" width="528" height="200"></canvas>
+  <button id="openCfg" class="toggle">⚙ Configurações</button>
 
-  <!-- config: colapsada/escondida por padrao -->
-  <details id="cfgSection">
-    <summary>Configurações</summary>
-
-    <label><input id="cfgAutoDetect" type="checkbox" style="width:auto"> <b>Auto</b>: detectar servidor do jogo (Direct Connect)</label>
-    <div class="row" id="autoRow">
-      <span class="muted">porta</span> <input id="cfgAutoPort" type="number" value="8765" style="width:90px">
-      <span class="muted">senha</span> <input id="cfgAutoPassword" type="password" placeholder="(vazio = sem senha)" style="flex:1">
+  <section id="cfgSection" class="settings" hidden>
+    <div class="tabs">
+      <button class="tab active" data-tab="audio">Áudio</button>
+      <button class="tab" data-tab="server">Servidor</button>
     </div>
 
-    <div class="muted" style="margin-top:8px">Servidores salvos (fallback / lista do Steam):</div>
-    <div class="row">
-      <select id="cfgServerSel" style="flex:1"></select>
-      <button id="cfgAdd" type="button">+ Novo</button>
-      <button id="cfgDel" type="button">Remover</button>
+    <div class="panel" id="tab-audio">
+      <label class="field">Microfone <select id="cfgMic"></select></label>
+      <label class="field">Saída de áudio <select id="cfgOutput"></select></label>
+      <label class="field range">Volume
+        <input id="cfgVolume" type="range" min="0" max="2" step="0.05" value="1">
+        <span id="cfgVolumeVal" class="dim">1.00</span>
+      </label>
+      <div class="rowline">
+        <button id="cfgRefreshDevices" class="mini">Atualizar dispositivos</button>
+        <span id="cfgDevHint" class="dim"></span>
+      </div>
     </div>
 
-    <label>Nome do servidor <input id="cfgName" type="text" placeholder="OurWorld"></label>
-    <label>Server URL <input id="cfgServer" type="text" placeholder="https://voz.seudominio.com"></label>
-    <label>Senha <input id="cfgPassword" type="password" placeholder="VOICE_PASSWORD"></label>
-    <label>Alcance da voz (metros) <input id="cfgRange" type="number" min="1" max="500" step="1" value="50"></label>
+    <div class="panel" id="tab-server" hidden>
+      <label class="switch"><input id="cfgAutoDetect" type="checkbox"> Detectar servidor do jogo (automático)</label>
+      <div class="two">
+        <label class="field">Porta da voz <input id="cfgAutoPort" type="number" value="8765"></label>
+        <label class="field">Senha (auto) <input id="cfgAutoPassword" type="password" placeholder="vazio = sem senha"></label>
+      </div>
 
-    <label><input id="cfgAuto" type="checkbox" style="width:auto"> Conectar automaticamente ao entrar no jogo</label>
+      <hr class="sep">
 
-    <hr style="border-color:#2c3a52">
-    <label>Microfone <select id="cfgMic"></select></label>
-    <label>Saída de áudio <select id="cfgOutput"></select></label>
-    <label>Volume <input id="cfgVolume" type="range" min="0" max="2" step="0.05" value="1"> <span id="cfgVolumeVal" class="muted">1.00</span></label>
-    <div class="row">
-      <button id="cfgRefreshDevices" type="button">Atualizar dispositivos</button>
-      <span id="cfgDevHint" class="muted"></span>
+      <div class="dim">Servidor manual (fallback)</div>
+      <div class="rowline">
+        <select id="cfgServerSel" style="flex:1"></select>
+        <button id="cfgAdd" class="mini">+ Novo</button>
+        <button id="cfgDel" class="mini">Remover</button>
+      </div>
+      <label class="field">Nome <input id="cfgName" type="text" placeholder="OurWorld"></label>
+      <label class="field">Server URL <input id="cfgServer" type="text" placeholder="https://voz.seudominio.com"></label>
+      <label class="field">Senha <input id="cfgPassword" type="password" placeholder="VOICE_PASSWORD"></label>
+      <label class="field">Alcance da voz (metros) <input id="cfgRange" type="number" min="1" max="500" step="1" value="50"></label>
+      <label class="switch"><input id="cfgAuto" type="checkbox"> Conectar automaticamente ao entrar no jogo</label>
     </div>
 
-    <div class="row">
+    <div class="save-row">
+      <span id="cfgSaved" class="hint"></span>
       <button id="cfgSave">Salvar</button>
-      <span id="cfgSaved" class="muted"></span>
     </div>
-  </details>
+  </section>
 
-  <div id="log"></div>
-  <script src="app.js"></script>
+  <button id="openLog" class="toggle">📋 Log</button>
+  <pre id="log" hidden></pre>
+
+</div>
+<script src="app.js"></script>
 </body>
 </html>

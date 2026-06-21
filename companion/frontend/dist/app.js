@@ -38,24 +38,9 @@ function placePanner(p) {
   else p.panner.setPosition(ax, ay, az);
 }
 
-// ----- mapa top-down centrado em voce -----
-const cv = $('stage'), ctx = cv.getContext('2d');
-function draw() {
-  ctx.clearRect(0, 0, cv.width, cv.height);
-  const cx = cv.width/2, cy = cv.height/2, S = 0.03;
-  const dot = (p, color, label) => {
-    const X = cx + (p.x - me.x)*S, Y = cy + (p.y - me.y)*S;
-    ctx.fillStyle = color; ctx.beginPath(); ctx.arc(X, Y, 7, 0, 7); ctx.fill();
-    const [fx,,fz] = fwd(p.yaw);
-    ctx.strokeStyle = color; ctx.beginPath(); ctx.moveTo(X, Y); ctx.lineTo(X+fx*16, Y+fz*16); ctx.stroke();
-    ctx.fillStyle = '#cdd6e0'; ctx.font = '11px monospace'; ctx.fillText(label, X+10, Y-8);
-  };
-  for (const id in peers) if (peers[id].panner) dot(peers[id], '#e06363', id.slice(0,4));
-  dot(me, '#5aa9e6', 'voce');
-  $('status').textContent = posFromGame ? 'no jogo' : 'aguardando o jogo…';
-  requestAnimationFrame(draw);
-}
-requestAnimationFrame(draw);
+// ----- status do topo (sem mapa) -----
+function updateStatus() { $('status').textContent = posFromGame ? 'no jogo' : 'aguardando o jogo…'; }
+updateStatus();
 
 // ----- eventos do backend: "pos" e "posLost" -----
 function onPos(data) {
@@ -65,7 +50,7 @@ function onPos(data) {
   if ([x, y, z, yaw].some(Number.isNaN)) return;
   me.x = x; me.y = y; me.z = z; me.yaw = yaw;
   posFromGame = true; placeListener();
-  if (!inGame) { inGame = true; if (cfg.autoConnect) onGameEnter(); }
+  if (!inGame) { inGame = true; updateStatus(); if (cfg.autoConnect) onGameEnter(); }
 }
 
 // ao entrar no jogo: tenta auto-detectar o IP (Direct Connect); senao, servidor salvo
@@ -85,7 +70,7 @@ async function onGameEnter() {
 if (window.runtime && window.runtime.EventsOn) {
   window.runtime.EventsOn('pos', onPos);
   window.runtime.EventsOn('posLost', () => {
-    inGame = false; posFromGame = false;
+    inGame = false; posFromGame = false; updateStatus();
     if (ws) { log('saiu do servidor — voz desconectada'); stop(); }
   });
 } else { log('aviso: fora do Wails (sem posição do jogo)'); }
@@ -95,11 +80,12 @@ let ws = null, pc = null, posTimer = null, gotHello = false;
 
 function setConn(state, label) {
   const el = $('conn'); el.textContent = label; el.className = 'badge ' + (state ? 'on' : 'off');
-  $('go').disabled = state;
-  $('leave').disabled = !state;
+  $('go').hidden = state;       // mostra Conectar OU Desconectar (nunca os dois)
+  $('leave').hidden = !state;
 }
-function showFallback(name) { $('fbName').textContent = name || ''; $('fallback').classList.add('show'); }
-function hideFallback() { $('fallback').classList.remove('show'); }
+function showFallback(name) { $('fbName').textContent = name || ''; $('fallback').hidden = false; }
+function hideFallback() { $('fallback').hidden = true; }
+function showSettings() { $('cfgSection').hidden = false; }
 
 function wsURLFrom(serverURL) {
   let u = (serverURL || '').trim(); if (!u) return '';
@@ -114,7 +100,7 @@ function selectedServer() { return cfg.servers[cfg.selected] || null; }
 
 function connectSelected() {
   const s = selectedServer();
-  if (!s || !s.url) { $('cfgSection').open = true; log('configure um servidor'); return; }
+  if (!s || !s.url) { showSettings(); log('configure um servidor'); return; }
   start(s);
 }
 
@@ -272,12 +258,20 @@ $('cfgSave').addEventListener('click', async () => {
   catch (err) { log('erro ao salvar: ' + err); }
 });
 
-$('fbConfig').addEventListener('click', () => { hideFallback(); $('cfgSection').open = true; });
+$('fbConfig').addEventListener('click', () => { hideFallback(); showSettings(); });
 $('fbIgnore').addEventListener('click', hideFallback);
 
 // botoes manuais: Conectar (no servidor selecionado da lista) / Desconectar
 $('go').onclick = () => { hideFallback(); connectSelected(); };
 $('leave').onclick = stop;
+
+// abas + toggles de painel
+$('openCfg').onclick = () => { $('cfgSection').hidden = !$('cfgSection').hidden; };
+$('openLog').onclick = () => { $('log').hidden = !$('log').hidden; };
+document.querySelectorAll('.tab').forEach(t => t.onclick = () => {
+  document.querySelectorAll('.tab').forEach(x => x.classList.toggle('active', x === t));
+  document.querySelectorAll('.panel').forEach(p => { p.hidden = (p.id !== 'tab-' + t.dataset.tab); });
+});
 
 // ----- boot -----
 (async () => {
@@ -295,8 +289,8 @@ $('leave').onclick = stop;
     const s = selectedServer();
     if (s) applyRange(s.voiceRangeMeters || 50);
     log('pronto — esperando entrar no jogo');
-    if (!cfg.autoDetect && (!s || !s.url || !s.password)) { $('cfgSection').open = true; log('adicione um servidor na config'); }
+    if (!cfg.autoDetect && (!s || !s.url || !s.password)) { showSettings(); log('adicione um servidor na config'); }
   } catch (err) {
-    log('erro ao carregar config: ' + err); $('cfgSection').open = true;
+    log('erro ao carregar config: ' + err); showSettings();
   }
 })();
