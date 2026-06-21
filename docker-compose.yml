@@ -10,7 +10,10 @@ services:
       - "0.0.0.0:${HTTP_PORT:-8080}:8080"            # sinalizacao (HTTP/ws)
       - "0.0.0.0:50000-50010:50000-50010/udp"        # midia (audio)
     environment:
-      VOICE_PASSWORD: "${VOICE_PASSWORD:-test}"
+      VOICE_PASSWORD: "${VOICE_PASSWORD:-}"
       # LOCAL no proprio PC: deixa vazio. Pra acessar de OUTRA maquina (LAN/VPS),
       # poe o IP dessa maquina aqui (pro audio achar caminho de volta). VPS: o IP publico.
       PUBLIC_IP: "${PUBLIC_IP:-}"
+      # "padrao no compose": o servidor manda nome+alcance pro companion ao conectar
+      SERVER_NAME: "${SERVER_NAME:-PalProxVoice}"
+      VOICE_RANGE: "${VOICE_RANGE:-50}"
