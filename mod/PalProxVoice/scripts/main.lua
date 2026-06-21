@@ -1,23 +1,40 @@
--- PalProxVoice M1 — ponte de posicao (transporte por ARQUIVO; UE4SS nao traz LuaSocket)
--- Le posicao (X,Y,Z) + direcao (Yaw) do player e escreve "x,y,z,yaw" num arquivo
--- que o companion (ou o receiver de teste) le. Tambem imprime no console ~1x/s.
+-- PalProxVoice M1 — ponte de posicao (arquivo fixo; UE4SS nao traz LuaSocket)
+-- Le posicao (X,Y,Z) + direcao (Yaw) do player e escreve "x,y,z,yaw" num arquivo.
+-- BLINDADO: cada chamada de engine vai em pcall, pra objeto em estado ruim
+-- (durante load/transicao) nao derrubar o jogo.
 local UEHelpers = require("UEHelpers")
--- caminho FIXO (mesma pasta pra todo processo, sem depender de %TEMP% que varia)
 local OUT = (os.getenv("PUBLIC") or "C:\\Users\\Public") .. "\\palproxvoice_pos.txt"
 local RATE_MS = 50          -- 20 Hz
 local enabled = true
 local tick = 0
 
--- No menu nao existe PlayerController e o GetPlayerController() *lanca erro*.
--- pcall pra tratar como "sem player ainda" (silencioso), nao como erro de verdade.
+-- chama fn protegido; retorna nil em qualquer falha
+local function try(fn)
+    local ok, res = pcall(fn)
+    if ok then return res end
+    return nil
+end
+
 local function readpos()
-    local ok, pc = pcall(UEHelpers.GetPlayerController, UEHelpers)
-    if not ok or not pc or not pc:IsValid() then return nil end
-    local pawn = pc.Pawn
-    if not pawn or not pawn:IsValid() then return nil end
-    local loc = pawn:K2_GetActorLocation()
-    local rot = pc:GetControlRotation() -- se falhar: pawn:K2_GetActorRotation()
-    return string.format("%.1f,%.1f,%.1f,%.1f", loc.X, loc.Y, loc.Z, rot.Yaw)
+    local pc = try(function() return UEHelpers:GetPlayerController() end)
+    if not pc then return nil end
+    if not try(function() return pc:IsValid() end) then return nil end
+
+    local pawn = try(function() return pc.Pawn end)
+    if not pawn then return nil end
+    if not try(function() return pawn:IsValid() end) then return nil end
+
+    local loc = try(function() return pawn:K2_GetActorLocation() end)
+    if not loc then return nil end
+    local x, y, z = loc.X, loc.Y, loc.Z
+    if not (x and y and z) then return nil end
+
+    -- yaw: ControlRotation (camera); se falhar, ActorRotation (corpo)
+    local rot = try(function() return pc:GetControlRotation() end)
+        or try(function() return pawn:K2_GetActorRotation() end)
+    local yaw = (rot and rot.Yaw) or 0
+
+    return string.format("%.1f,%.1f,%.1f,%.1f", x, y, z, yaw)
 end
 
 local function step()
@@ -36,14 +53,17 @@ end
 LoopAsync(RATE_MS, function()
     ExecuteInGameThread(function()
         local ok, err = pcall(step)
-        if not ok then print("[PalProxVoice] erro real: " .. tostring(err) .. "\n") end
+        if not ok then print("[PalProxVoice] erro: " .. tostring(err) .. "\n") end
     end)
     return false -- continua o loop
 end)
 
-RegisterKeyBind(Key.F8, { ModifierKey.CONTROL }, function()
-    enabled = not enabled
-    print("[PalProxVoice] " .. (enabled and "ON" or "OFF") .. "\n")
+-- keybind defensivo (alguns builds podem nao ter Key/ModifierKey)
+pcall(function()
+    RegisterKeyBind(Key.F8, { ModifierKey.CONTROL }, function()
+        enabled = not enabled
+        print("[PalProxVoice] " .. (enabled and "ON" or "OFF") .. "\n")
+    end)
 end)
 
 print("[PalProxVoice] carregado. escrevendo -> " .. OUT .. "\n")
