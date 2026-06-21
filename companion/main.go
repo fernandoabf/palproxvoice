@@ -67,19 +67,27 @@ func (a *App) positionListener() {
 	posFile := filepath.Join(pub, "palproxvoice_pos.txt")
 
 	var lastPos string
+	var wasFresh bool
 	ticker := time.NewTicker(50 * time.Millisecond)
 	defer ticker.Stop()
 
 	for range ticker.C {
-		data, err := os.ReadFile(posFile)
-		if err != nil {
-			continue // file not created yet, or was removed
-		}
-
-		pos := string(data)
-		if pos != lastPos {
-			lastPos = pos
-			runtime.EventsEmit(a.ctx, "pos", pos)
+		info, err := os.Stat(posFile)
+		// "fresco" = o mod escreveu nos ultimos 2s (no mundo ele escreve a 20Hz).
+		fresh := err == nil && time.Since(info.ModTime()) < 2*time.Second
+		if fresh {
+			if data, rerr := os.ReadFile(posFile); rerr == nil {
+				if pos := string(data); pos != lastPos {
+					lastPos = pos
+					runtime.EventsEmit(a.ctx, "pos", pos)
+				}
+			}
+			wasFresh = true
+		} else if wasFresh {
+			// posicao parou de atualizar -> saiu do mundo/servidor
+			wasFresh = false
+			lastPos = ""
+			runtime.EventsEmit(a.ctx, "posLost")
 		}
 	}
 }

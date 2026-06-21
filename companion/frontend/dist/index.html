@@ -35,6 +35,16 @@
           <input id="cfgVolume" type="range" min="0" max="2" step="0.05" value="1">
           <span id="cfgVolumeVal" class="muted">1.00</span>
         </label>
+        <label>Microfone
+          <select id="cfgMic"></select>
+        </label>
+        <label>Saída de áudio
+          <select id="cfgOutput"></select>
+        </label>
+        <div class="row">
+          <button id="cfgRefreshDevices" type="button">Atualizar dispositivos</button>
+          <span id="cfgDevHint" class="muted"></span>
+        </div>
         <div class="row">
           <button id="cfgSave">Salvar</button>
           <span id="cfgSaved" class="muted"></span>

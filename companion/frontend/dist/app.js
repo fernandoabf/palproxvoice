@@ -1,17 +1,17 @@
 // PalProxVoice Companion — frontend vanilla (Wails v2)
-// Reaproveita toda a logica de audio/WebRTC/espacializacao do server/web/index.html.
-// Diferencas: posicao vem do evento Wails "pos" (nao mais do fetch da bridge),
-// config vem de window.go.main.App.GetConfig/SaveConfig, e ha um GainNode master.
+// Posicao vem do evento Wails "pos"; "posLost" = saiu do mundo -> desconecta.
+// Config via window.go.main.App.GetConfig/SaveConfig (inclui mic + saida de audio).
 
 // ----- world: posicao em CENTIMETROS (mesmo formato do mod M1: x,y,z,yaw) -----
 const me = { x: 0, y: 0, z: 0, yaw: 0 };  // yaw em graus
 const CM = 100;          // cm -> m na hora de espacializar
 const peers = {};        // id -> { x,y,z,yaw, panner, audio }
-let posFromGame = false; // true quando ja recebemos ao menos uma posicao do jogo
+let posFromGame = false; // ja recebemos posicao do jogo?
+let inGame = false;      // true entre o 1o "pos" e o "posLost"
 
 // runtime config (defaults; sobrescritos por GetConfig no load)
-let voiceRangeMeters = 50;   // vira maxDistance do PannerNode (ja em metros)
-let masterVolume = 1.0;      // vira o ganho do GainNode master
+let voiceRangeMeters = 50;
+let masterVolume = 1.0;
 
 const logEl = document.getElementById('log');
 const log = m => { logEl.textContent += m + "\n"; logEl.scrollTop = logEl.scrollHeight; };
@@ -31,7 +31,7 @@ function placeListener() {
     listener.positionX.value = ax; listener.positionY.value = ay; listener.positionZ.value = az;
     listener.forwardX.value = fx; listener.forwardY.value = fy; listener.forwardZ.value = fz;
     listener.upX.value = 0; listener.upY.value = 1; listener.upZ.value = 0;
-  } else { // API antiga
+  } else {
     listener.setPosition(ax, ay, az);
     listener.setOrientation(fx, fy, fz, 0, 1, 0);
   }
@@ -43,13 +43,13 @@ function placePanner(p) {
   else p.panner.setPosition(ax, ay, az);
 }
 
-// ----- desenho (top-down) so pra enxergar quem ta onde -----
+// ----- desenho (top-down) centrado em voce -----
 const cv = document.getElementById('stage'), ctx = cv.getContext('2d');
 function draw() {
   ctx.clearRect(0, 0, cv.width, cv.height);
-  const cx = cv.width/2, cy = cv.height/2, S = 0.03; // px/cm; vista centrada em VOCE
+  const cx = cv.width/2, cy = cv.height/2, S = 0.03; // px/cm
   const dot = (p, color, label) => {
-    const X = cx + (p.x - me.x)*S, Y = cy + (p.y - me.y)*S; // relativo a voce
+    const X = cx + (p.x - me.x)*S, Y = cy + (p.y - me.y)*S;
     ctx.fillStyle = color; ctx.beginPath(); ctx.arc(X, Y, 7, 0, 7); ctx.fill();
     const [fx,,fz] = fwd(p.yaw);
     ctx.strokeStyle = color; ctx.beginPath(); ctx.moveTo(X, Y); ctx.lineTo(X+fx*16, Y+fz*16); ctx.stroke();
@@ -64,7 +64,7 @@ function draw() {
 }
 requestAnimationFrame(draw);
 
-// ----- posicao real do jogo via evento Wails "pos" (substitui o fetch da bridge) -----
+// ----- eventos do backend Wails: "pos" (atualiza) e "posLost" (saiu) -----
 function onPos(data) {
   if (!data) return;
   const t = String(data).trim();
@@ -74,9 +74,14 @@ function onPos(data) {
   me.x = x; me.y = y; me.z = z; me.yaw = yaw;
   posFromGame = true;
   placeListener();
+  if (!inGame) { inGame = true; autoConnectIfConfigured(); } // entrou no jogo -> conecta
 }
 if (window.runtime && window.runtime.EventsOn) {
   window.runtime.EventsOn('pos', onPos);
+  window.runtime.EventsOn('posLost', () => {           // posicao parou -> saiu do servidor
+    inGame = false; posFromGame = false;
+    if (ws) { log('saiu do servidor — voz desconectada'); stop(); }
+  });
 } else {
   log('aviso: window.runtime indisponivel (rodando fora do Wails?)');
 }
@@ -94,44 +99,46 @@ function setConn(state, label) {
   document.getElementById('leave').disabled = !state;
 }
 
-// Deriva a URL do ws a partir do ServerURL:
-//   https://host  -> wss://host/ws
-//   ws://host     -> ws://host/ws  (ja explicito)
-//   wss://host    -> wss://host/ws
-//   host (cru)    -> ws://host/ws
 function wsURLFrom(serverURL) {
   let u = (serverURL || '').trim();
   if (!u) return '';
   if (u.startsWith('https://'))      u = 'wss://' + u.slice('https://'.length);
   else if (u.startsWith('http://'))  u = 'ws://'  + u.slice('http://'.length);
   else if (!u.startsWith('ws://') && !u.startsWith('wss://')) u = 'ws://' + u;
-  u = u.replace(/\/+$/, '');           // tira barras finais
+  u = u.replace(/\/+$/, '');
   if (!u.endsWith('/ws')) u += '/ws';
   return u;
+}
+
+function autoConnectIfConfigured() {
+  if (ws) return;
+  const cfg = readCfgForm();
+  if (cfg.serverUrl && cfg.password) { log('entrou no jogo — conectando voz'); start(cfg.serverUrl, cfg.password); }
 }
 
 async function start(serverURL, password) {
   if (ws) { log('ja conectado/conectando'); return; }
   const url = wsURLFrom(serverURL);
   if (!url || !password) { log('preencha Server URL e Senha'); return; }
+  const cfg = readCfgForm();
 
   setConn(false, 'conectando...');
 
   if (!actx) {
     actx = new (window.AudioContext || window.webkitAudioContext)();
     listener = actx.listener;
-    // GainNode master antes do destino (volume vindo da config)
     masterGain = actx.createGain();
     masterGain.gain.value = masterVolume;
     masterGain.connect(actx.destination);
   }
   if (actx.state === 'suspended') { try { await actx.resume(); } catch (_) {} }
+  // saida de audio escolhida (Chrome/WebView2 recente)
+  if (cfg.outputDeviceId && actx.setSinkId) { try { await actx.setSinkId(cfg.outputDeviceId); } catch (e) { log('saida nao aplicada: ' + e); } }
   placeListener();
 
   ws = new WebSocket(url);
   pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
 
-  // cada track que chega (1 por peer) -> PannerNode HRTF -> masterGain -> destino
   pc.ontrack = e => {
     const id = e.streams[0].id;
     if (peers[id] && peers[id].panner) return;
@@ -141,7 +148,6 @@ async function start(serverURL, password) {
       refDistance: 2, maxDistance: voiceRangeMeters, rolloffFactor: 1,
     });
     src.connect(panner).connect(masterGain);
-    // <audio> mudo so pra alguns browsers manterem o stream "ativo"
     const a = new Audio(); a.muted = true; a.srcObject = e.streams[0];
     peers[id] = Object.assign(peers[id] || { x:0,y:0,z:0,yaw:0 }, { panner, audio: a });
     placePanner(peers[id]);
@@ -155,14 +161,16 @@ async function start(serverURL, password) {
   ws.onopen = async () => {
     ws.send(JSON.stringify({ event: 'auth', data: password }));
     try {
-      const mic = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // microfone escolhido (ou padrao)
+      const constraints = { audio: cfg.micDeviceId ? { deviceId: { exact: cfg.micDeviceId } } : true };
+      const mic = await navigator.mediaDevices.getUserMedia(constraints);
       mic.getTracks().forEach(t => pc.addTrack(t, mic));
+      populateDevices(cfg.micDeviceId, cfg.outputDeviceId); // permissao concedida -> labels aparecem
       log('mic ok, conectando...');
     } catch (err) {
       log('ERRO ao abrir microfone: ' + err);
     }
     setConn(true, 'conectado');
-    // manda minha posicao 10x/s (mesmo caminho do mod M1 -> companion -> server)
     posTimer = setInterval(() => {
       if (ws && ws.readyState === 1)
         ws.send(JSON.stringify({ event: 'pos', data: `${me.x.toFixed(1)},${me.y.toFixed(1)},${me.z.toFixed(1)},${me.yaw.toFixed(1)}` }));
@@ -180,7 +188,7 @@ async function start(serverURL, password) {
       ws.send(JSON.stringify({ event: 'answer', data: JSON.stringify(ans) }));
     }
     if (m.event === 'candidate') { try { await pc.addIceCandidate(JSON.parse(m.data)); } catch (_) {} }
-    if (m.event === 'pos') { // "x,y,z,yaw" de outro player
+    if (m.event === 'pos') {
       const [x, y, z, yaw] = m.data.split(',').map(Number);
       const p = peers[m.id] = Object.assign(peers[m.id] || {}, { x, y, z, yaw });
       placePanner(p);
@@ -195,7 +203,6 @@ function stop() {
   if (posTimer) { clearInterval(posTimer); posTimer = null; }
   if (pc) { try { pc.close(); } catch (_) {} pc = null; }
   if (ws) { try { ws.close(); } catch (_) {} ws = null; }
-  // descarta panners dos peers (mantem objetos de posicao zerados)
   for (const id in peers) {
     try { peers[id].panner && peers[id].panner.disconnect(); } catch (_) {}
     delete peers[id];
@@ -210,11 +217,37 @@ function applyVolume(v) {
 }
 function applyRange(m) {
   voiceRangeMeters = m;
-  // aplica em panners ja existentes
-  for (const id in peers) {
-    const p = peers[id];
-    if (p.panner) p.panner.maxDistance = m;
-  }
+  for (const id in peers) { const p = peers[id]; if (p.panner) p.panner.maxDistance = m; }
+}
+
+// ----- dispositivos de audio (mic + saida) -----
+async function populateDevices(selMic, selOut) {
+  let devices = [];
+  try { devices = await navigator.mediaDevices.enumerateDevices(); } catch (_) {}
+  const mic = document.getElementById('cfgMic');
+  const out = document.getElementById('cfgOutput');
+  mic.innerHTML = ''; out.innerHTML = '';
+  const addOpt = (sel, id, label, selId) => {
+    const o = document.createElement('option');
+    o.value = id; o.textContent = label || (id ? id.slice(0, 10) : 'Padrão');
+    if (id === selId) o.selected = true;
+    sel.appendChild(o);
+  };
+  addOpt(mic, '', 'Padrão', selMic);
+  addOpt(out, '', 'Padrão', selOut);
+  let hasLabels = false;
+  devices.forEach(d => {
+    if (d.label) hasLabels = true;
+    if (d.kind === 'audioinput')  addOpt(mic, d.deviceId, d.label, selMic);
+    if (d.kind === 'audiooutput') addOpt(out, d.deviceId, d.label, selOut);
+  });
+  document.getElementById('cfgDevHint').textContent = hasLabels ? '' : '"Atualizar dispositivos" pra ver os nomes';
+}
+async function refreshDevices() {
+  try { const t = await navigator.mediaDevices.getUserMedia({ audio: true }); t.getTracks().forEach(x => x.stop()); }
+  catch (e) { log('permissão de mic negada: ' + e); }
+  const cfg = readCfgForm();
+  await populateDevices(cfg.micDeviceId, cfg.outputDeviceId);
 }
 
 function readCfgForm() {
@@ -223,6 +256,8 @@ function readCfgForm() {
     password:  document.getElementById('cfgPassword').value,
     voiceRangeMeters: parseFloat(document.getElementById('cfgRange').value) || 50,
     volume:    parseFloat(document.getElementById('cfgVolume').value),
+    micDeviceId:    document.getElementById('cfgMic').value || '',
+    outputDeviceId: document.getElementById('cfgOutput').value || '',
   };
 }
 
@@ -233,19 +268,22 @@ function fillCfgForm(cfg) {
   const vol = (cfg.volume == null) ? 1.0 : cfg.volume;
   document.getElementById('cfgVolume').value   = vol;
   document.getElementById('cfgVolumeVal').textContent = vol.toFixed(2);
+  // mic/saida: populados por populateDevices (restaura a selecao salva)
 }
 
 // ----- UI wiring -----
 document.getElementById('cfgVolume').addEventListener('input', e => {
   const v = parseFloat(e.target.value);
   document.getElementById('cfgVolumeVal').textContent = v.toFixed(2);
-  applyVolume(v); // preview em tempo real
+  applyVolume(v);
 });
+document.getElementById('cfgRefreshDevices').addEventListener('click', refreshDevices);
 
 document.getElementById('cfgSave').addEventListener('click', async () => {
   const cfg = readCfgForm();
   applyRange(cfg.voiceRangeMeters);
   applyVolume(cfg.volume);
+  if (cfg.outputDeviceId && actx && actx.setSinkId) { try { await actx.setSinkId(cfg.outputDeviceId); } catch (_) {} }
   try {
     await window.go.main.App.SaveConfig(cfg);
     const el = document.getElementById('cfgSaved');
@@ -264,23 +302,18 @@ document.getElementById('go').onclick = () => {
 };
 document.getElementById('leave').onclick = stop;
 
-// ----- boot: carrega config e auto-conecta -----
+// ----- boot: carrega config + lista dispositivos; conecta quando entrar no jogo -----
 (async () => {
   try {
     const cfg = await window.go.main.App.GetConfig();
     fillCfgForm(cfg);
     applyRange(cfg.voiceRangeMeters || 50);
-    masterVolume = (cfg.volume == null) ? 1.0 : cfg.volume; // aplicado ao criar o masterGain
-    log('config carregada');
-    if (cfg.serverUrl && cfg.password) {
-      log('auto-conectando...');
-      start(cfg.serverUrl, cfg.password);
-    } else {
-      // abre a secao de config se faltam dados
-      document.getElementById('cfgSection').open = true;
-    }
+    masterVolume = (cfg.volume == null) ? 1.0 : cfg.volume;
+    await populateDevices(cfg.micDeviceId, cfg.outputDeviceId);
+    log('config carregada — esperando entrar no jogo');
+    if (!cfg.serverUrl || !cfg.password) document.getElementById('cfgSection').open = true;
   } catch (err) {
-    log('erro ao carregar config (rodando fora do Wails?): ' + err);
+    log('erro ao carregar config (fora do Wails?): ' + err);
     document.getElementById('cfgSection').open = true;
   }
 })();

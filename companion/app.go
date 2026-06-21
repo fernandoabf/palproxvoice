@@ -13,6 +13,8 @@ type Config struct {
 	Password         string  `json:"password"`
 	VoiceRangeMeters float64 `json:"voiceRangeMeters"`
 	Volume           float64 `json:"volume"`
+	MicDeviceID      string  `json:"micDeviceId"`
+	OutputDeviceID   string  `json:"outputDeviceId"`
 }
 
 // App holds the Wails runtime context and exposes bound methods.
