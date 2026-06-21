@@ -15,7 +15,17 @@ let masterVolume = 1.0;
 let cfg = { servers: [], selected: 0, volume: 1.0, micDeviceId: '', outputDeviceId: '', autoConnect: true };
 
 const $ = id => document.getElementById(id);
-const log = m => { const e = $('log'); e.textContent += m + "\n"; e.scrollTop = e.scrollHeight; };
+// log colorido com timestamp. level: 'ok' | 'warn' | 'err' | 'info'
+function log(m, level) {
+  const col = { ok:'var(--good)', warn:'var(--warn)', err:'var(--bad)', info:'var(--info)' };
+  const e = $('log'); const d = new Date();
+  const ts = ('0'+d.getHours()).slice(-2) + ':' + ('0'+d.getMinutes()).slice(-2);
+  const row = document.createElement('div'); row.className = 'l';
+  const tEl = document.createElement('span'); tEl.className = 't'; tEl.textContent = ts;
+  const mEl = document.createElement('span'); mEl.textContent = m;
+  if (col[level]) mEl.style.color = col[level];
+  row.append(tEl, mEl); e.appendChild(row); e.scrollTop = e.scrollHeight;
+}
 
 const fwd = yaw => { const r = yaw * Math.PI / 180; return [Math.cos(r), 0, Math.sin(r)]; };
 (() => { const [fx,,fz] = fwd(0); console.assert(Math.abs(fx-1)<1e-9 && Math.abs(fz)<1e-9, "fwd(0) +X"); })();
@@ -38,9 +48,23 @@ function placePanner(p) {
   else p.panner.setPosition(ax, ay, az);
 }
 
-// ----- status do topo (sem mapa) -----
-function updateStatus() { $('status').textContent = posFromGame ? 'no jogo' : 'aguardando o jogo…'; }
-updateStatus();
+// ----- status (badge + card + dot + metricas) -----
+let connState = 'off'; // 'off' | 'connecting' | 'on'
+function refreshStatus() {
+  let txt, cls, sub;
+  if (connState === 'off')             { txt='Offline';        cls='off';       sub='Palworld fechado ou voz desligada'; }
+  else if (connState === 'connecting') { txt='Conectando…';    cls='searching'; sub='estabelecendo conexão'; }
+  else if (!posFromGame)               { txt='Procurando jogo';cls='searching'; sub='conectado — entre num servidor'; }
+  else                                 { txt='Conectado';      cls='on';        sub='voz de proximidade ativa'; }
+  $('conn').textContent = txt;    $('conn').className = 'badge ' + cls;
+  $('connTxt').textContent = txt; $('statusDot').className = 'sdot ' + cls;
+  $('status').textContent = sub;
+  $('go').hidden = (connState !== 'off');
+  $('leave').hidden = (connState === 'off');
+  $('connMeta').hidden = (connState !== 'on');
+}
+function updatePlayers() { $('mPlayers').textContent = Object.values(peers).filter(p => p.panner).length; }
+refreshStatus();
 
 // ----- eventos do backend: "pos" e "posLost" -----
 function onPos(data) {
@@ -50,7 +74,7 @@ function onPos(data) {
   if ([x, y, z, yaw].some(Number.isNaN)) return;
   me.x = x; me.y = y; me.z = z; me.yaw = yaw;
   posFromGame = true; placeListener();
-  if (!inGame) { inGame = true; updateStatus(); if (cfg.autoConnect) onGameEnter(); }
+  if (!inGame) { inGame = true; refreshStatus(); if (cfg.autoConnect) onGameEnter(); }
 }
 
 // ao entrar no jogo: tenta auto-detectar o IP (Direct Connect); senao, servidor salvo
@@ -70,7 +94,7 @@ async function onGameEnter() {
 if (window.runtime && window.runtime.EventsOn) {
   window.runtime.EventsOn('pos', onPos);
   window.runtime.EventsOn('posLost', () => {
-    inGame = false; posFromGame = false; updateStatus();
+    inGame = false; posFromGame = false; refreshStatus();
     if (ws) { log('saiu do servidor — voz desconectada'); stop(); }
   });
 } else { log('aviso: fora do Wails (sem posição do jogo)'); }
@@ -78,14 +102,10 @@ if (window.runtime && window.runtime.EventsOn) {
 // ----- WebSocket / WebRTC -----
 let ws = null, pc = null, posTimer = null, gotHello = false;
 
-function setConn(state, label) {
-  const el = $('conn'); el.textContent = label; el.className = 'badge ' + (state ? 'on' : 'off');
-  $('go').hidden = state;       // mostra Conectar OU Desconectar (nunca os dois)
-  $('leave').hidden = !state;
-}
+function setConn(s) { connState = s; refreshStatus(); }
 function showFallback(name) { $('fbName').textContent = name || ''; $('fallback').hidden = false; }
 function hideFallback() { $('fallback').hidden = true; }
-function showSettings() { $('cfgSection').hidden = false; }
+function showSettings() { try { $('cfgServer').focus(); $('cfgServer').scrollIntoView({ block: 'center' }); } catch (_) {} }
 
 function wsURLFrom(serverURL) {
   let u = (serverURL || '').trim(); if (!u) return '';
@@ -111,7 +131,7 @@ async function start(s) {
   hideFallback();
   gotHello = false;
   voiceRangeMeters = s.voiceRangeMeters || 50;
-  setConn(false, 'conectando…');
+  setConn('connecting');
 
   if (!actx) {
     actx = new (window.AudioContext || window.webkitAudioContext)();
@@ -133,7 +153,7 @@ async function start(s) {
     src.connect(panner).connect(masterGain);
     const a = new Audio(); a.muted = true; a.srcObject = e.streams[0];
     peers[id] = Object.assign(peers[id] || { x:0,y:0,z:0,yaw:0 }, { panner, audio: a });
-    placePanner(peers[id]); log('ouvindo peer ' + id.slice(0,8));
+    placePanner(peers[id]); updatePlayers(); log('ouvindo peer ' + id.slice(0,8), 'ok');
   };
   pc.onicecandidate = e => { if (e.candidate) ws.send(JSON.stringify({ event: 'candidate', data: JSON.stringify(e.candidate) })); };
 
@@ -145,8 +165,8 @@ async function start(s) {
       mic.getTracks().forEach(t => pc.addTrack(t, mic));
       populateDevices();
       log('mic ok');
-    } catch (err) { log('ERRO microfone: ' + err); }
-    setConn(true, 'conectado');
+    } catch (err) { log('ERRO microfone: ' + err, 'err'); }
+    setConn('on');
     posTimer = setInterval(() => {
       if (ws && ws.readyState === 1)
         ws.send(JSON.stringify({ event: 'pos', data: `${me.x.toFixed(1)},${me.y.toFixed(1)},${me.z.toFixed(1)},${me.yaw.toFixed(1)}` }));
@@ -155,10 +175,10 @@ async function start(s) {
 
   ws.onmessage = async ev => {
     const m = JSON.parse(ev.data);
-    if (m.event === 'error')      { log('ERRO: ' + m.data); return; }
+    if (m.event === 'error')      { log('ERRO: ' + m.data, 'err'); return; }
     if (m.event === 'hello')      { gotHello = true; hideFallback(); log('conectado (id ' + m.data.slice(0,8) + ')'); return; }
     if (m.event === 'serverinfo') { // "no compose e o padrao": nome + alcance do servidor
-      try { const si = JSON.parse(m.data); $('srvName').textContent = si.name ? '· ' + si.name : '';
+      try { const si = JSON.parse(m.data); $('mServer').textContent = si.name || '—';
             const r = parseFloat(si.range); if (r) applyRange(r); } catch (_) {} return;
     }
     if (m.event === 'offer') {
@@ -186,7 +206,8 @@ function stop() {
   if (pc) { try { pc.close(); } catch (_) {} pc = null; }
   if (ws) { try { ws.close(); } catch (_) {} ws = null; }
   for (const id in peers) { try { peers[id].panner && peers[id].panner.disconnect(); } catch (_) {} delete peers[id]; }
-  setConn(false, 'desconectado');
+  updatePlayers();
+  setConn('off');
 }
 
 // ----- config / servidores -----
@@ -245,7 +266,7 @@ function gatherConfig() {
 }
 
 // ----- UI wiring -----
-$('cfgVolume').addEventListener('input', e => { const v = parseFloat(e.target.value); $('cfgVolumeVal').textContent = v.toFixed(2); applyVolume(v); });
+$('cfgVolume').addEventListener('input', e => { const v = parseFloat(e.target.value); $('cfgVolumeVal').textContent = Math.round(v*100)+'%'; applyVolume(v); });
 $('cfgRefreshDevices').addEventListener('click', refreshDevices);
 $('cfgServerSel').addEventListener('change', e => { cfg.selected = parseInt(e.target.value) || 0; fillServerFields(selectedServer()); });
 $('cfgAdd').addEventListener('click', () => { cfg.servers.push({ name:'Novo', url:'', password:'', voiceRangeMeters:50 }); cfg.selected = cfg.servers.length-1; renderServerList(); fillServerFields(selectedServer()); });
@@ -261,17 +282,9 @@ $('cfgSave').addEventListener('click', async () => {
 $('fbConfig').addEventListener('click', () => { hideFallback(); showSettings(); });
 $('fbIgnore').addEventListener('click', hideFallback);
 
-// botoes manuais: Conectar (no servidor selecionado da lista) / Desconectar
+// botoes manuais: Conectar (servidor selecionado) / Desconectar
 $('go').onclick = () => { hideFallback(); connectSelected(); };
 $('leave').onclick = stop;
-
-// abas + toggles de painel
-$('openCfg').onclick = () => { $('cfgSection').hidden = !$('cfgSection').hidden; };
-$('openLog').onclick = () => { $('log').hidden = !$('log').hidden; };
-document.querySelectorAll('.tab').forEach(t => t.onclick = () => {
-  document.querySelectorAll('.tab').forEach(x => x.classList.toggle('active', x === t));
-  document.querySelectorAll('.panel').forEach(p => { p.hidden = (p.id !== 'tab-' + t.dataset.tab); });
-});
 
 // ----- boot -----
 (async () => {
@@ -279,7 +292,7 @@ document.querySelectorAll('.tab').forEach(t => t.onclick = () => {
     cfg = await window.go.main.App.GetConfig();
     if (!cfg.servers) cfg.servers = [];
     masterVolume = (cfg.volume == null) ? 1.0 : cfg.volume;
-    $('cfgVolume').value = masterVolume; $('cfgVolumeVal').textContent = masterVolume.toFixed(2);
+    $('cfgVolume').value = masterVolume; $('cfgVolumeVal').textContent = Math.round(masterVolume*100)+'%';
     $('cfgAuto').checked = cfg.autoConnect !== false;
     $('cfgAutoDetect').checked = !!cfg.autoDetect;
     $('cfgAutoPort').value = cfg.autoPort || 8765;

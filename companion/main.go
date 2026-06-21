@@ -29,9 +29,11 @@ func main() {
 	}
 
 	err := wails.Run(&options.App{
-		Title:            "PalProxVoice Companion",
-		Width:            800,
-		Height:           600,
+		Title:            "PalProxVoice",
+		Width:            960,
+		Height:           700,
+		MinWidth:         640,
+		MinHeight:        560,
 		WindowStartState: startState,
 		AssetServer: &assetserver.Options{
 			Assets: assets,
