@@ -20,6 +20,10 @@ WizardStyle=modern
 [Languages]
 Name: "br"; MessagesFile: "compiler:Languages\BrazilianPortuguese.isl"
 
+[Messages]
+SelectDirDesc=Escolha a instalacao do Palworld onde instalar.
+SelectDirLabel3=Auto-detectamos o Palworld do Steam. Se voce tem mais de uma instalacao (outra pasta, build diferente), clique em Procurar e escolha qual.
+
 [Files]
 ; companion + config -> LocalAppData do usuario
 Source: "palproxvoice.exe"; DestDir: "{localappdata}\PalProxVoice"; Flags: ignoreversion
@@ -36,15 +40,49 @@ Filename: "{localappdata}\PalProxVoice\palproxvoice.exe"; Description: "Abrir o 
 
 [Code]
 function SteamPalworld(): String;
-var steam: String;
+var
+  steam, vdf, s, lib: String;
+  lines: TArrayOfString;
+  i, p, q: Integer;
 begin
   Result := '';
-  if RegQueryStringValue(HKCU, 'Software\Valve\Steam', 'SteamPath', steam) then
+  if not RegQueryStringValue(HKCU, 'Software\Valve\Steam', 'SteamPath', steam) then
+    exit;
+  StringChangeEx(steam, '/', '\', True);
+  // biblioteca principal
+  if DirExists(steam + '\steamapps\common\Palworld\Pal\Binaries') then
   begin
-    StringChangeEx(steam, '/', '\', True);
-    if DirExists(steam + '\steamapps\common\Palworld\Pal\Binaries') then
-      Result := steam + '\steamapps\common\Palworld';
+    Result := steam + '\steamapps\common\Palworld';
+    exit;
   end;
+  // demais bibliotecas (libraryfolders.vdf)
+  vdf := steam + '\steamapps\libraryfolders.vdf';
+  if LoadStringsFromFile(vdf, lines) then
+    for i := 0 to GetArrayLength(lines) - 1 do
+    begin
+      s := lines[i];
+      p := Pos('"path"', s);
+      if p > 0 then
+      begin
+        s := Copy(s, p + 6, Length(s));
+        p := Pos('"', s);
+        if p > 0 then
+        begin
+          s := Copy(s, p + 1, Length(s));
+          q := Pos('"', s);
+          if q > 0 then
+          begin
+            lib := Copy(s, 1, q - 1);
+            StringChangeEx(lib, '\\', '\', True);
+            if DirExists(lib + '\steamapps\common\Palworld\Pal\Binaries') then
+            begin
+              Result := lib + '\steamapps\common\Palworld';
+              exit;
+            end;
+          end;
+        end;
+      end;
+    end;
 end;
 
 function DetectPalworld(Param: String): String;
