@@ -35,18 +35,26 @@ jobs:
         working-directory: ./companion
         run: wails build -platform windows/amd64 -o palproxvoice.exe
 
-      - name: Upload artifact
+      - name: Zip do mod UE4SS
+        shell: pwsh
+        run: Compress-Archive -Path mod/PalProxVoice -DestinationPath PalProxVoice-mod.zip -Force
+
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: windows-executable
-          path: ./companion/build/bin/palproxvoice.exe
+          name: palproxvoice
+          path: |
+            ./companion/build/bin/palproxvoice.exe
+            ./PalProxVoice-mod.zip
           retention-days: 30
 
-      - name: Create GitHub Release and attach executable
+      - name: Create GitHub Release and attach files
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: ./companion/build/bin/palproxvoice.exe
+          files: |
+            ./companion/build/bin/palproxvoice.exe
+            ./PalProxVoice-mod.zip
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
         env:
