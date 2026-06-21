@@ -95,6 +95,8 @@ let ws = null, pc = null, posTimer = null, gotHello = false;
 
 function setConn(state, label) {
   const el = $('conn'); el.textContent = label; el.className = 'badge ' + (state ? 'on' : 'off');
+  $('go').disabled = state;
+  $('leave').disabled = !state;
 }
 function showFallback(name) { $('fbName').textContent = name || ''; $('fallback').classList.add('show'); }
 function hideFallback() { $('fallback').classList.remove('show'); }
@@ -272,6 +274,10 @@ $('cfgSave').addEventListener('click', async () => {
 
 $('fbConfig').addEventListener('click', () => { hideFallback(); $('cfgSection').open = true; });
 $('fbIgnore').addEventListener('click', hideFallback);
+
+// botoes manuais: Conectar (no servidor selecionado da lista) / Desconectar
+$('go').onclick = () => { hideFallback(); connectSelected(); };
+$('leave').onclick = stop;
 
 // ----- boot -----
 (async () => {
