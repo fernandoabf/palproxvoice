@@ -1,0 +1,60 @@
+# Palworld de TESTE — isolado do OurWorld (portas, container e volume proprios).
+# Ao subir: o "restore" baixa o ultimo backup do R2 e restaura o mundo;
+# so depois o servidor de teste sobe, ja com esse mundo. SO RODA NA VPS.
+#
+# Subir:    docker compose -f docker-compose.palworld-test.yml up -d
+# Conectar: Direct Connect em IP_DO_VPS:8222  (senha teste123)
+services:
+  # 1) baixa o ultimo backup do R2 e restaura no volume de teste, depois sai
+  restore:
+    image: rclone/rclone:latest
+    container_name: palworld-test-restore
+    restart: "no"
+    environment:
+      RCLONE_CONFIG_R2_TYPE: s3
+      RCLONE_CONFIG_R2_PROVIDER: Cloudflare
+      RCLONE_CONFIG_R2_ACCESS_KEY_ID: "${R2_ACCESS_KEY_ID}"
+      RCLONE_CONFIG_R2_SECRET_ACCESS_KEY: "${R2_SECRET_ACCESS_KEY}"
+      RCLONE_CONFIG_R2_ENDPOINT: "https://bc4a5a6424cfb41d1d6c521411b84fb5.r2.cloudflarestorage.com"
+      RCLONE_CONFIG_R2_REGION: auto
+      RCLONE_CONFIG_R2_NO_CHECK_BUCKET: "true"
+    volumes:
+      - palworld_test_data:/palworld
+      - ./restore.sh:/restore.sh:ro
+    entrypoint: ["/bin/sh", "/restore.sh"]
+
+  # 2) servidor de TESTE
+  palworld-test:
+    image: thijsvanloef/palworld-server-docker:latest
+    container_name: palworld-test
+    restart: unless-stopped
+    depends_on:
+      restore:
+        condition: service_completed_successfully
+    stop_grace_period: 30s
+    ports:
+      - "8222:8211/udp"     # jogo (porta diferente da prod 8211)
+      - "27025:27015/udp"   # query
+    environment:
+      PUID: 1000
+      PGID: 1000
+      TZ: "America/Fortaleza"
+      SERVER_NAME: "OurWorld TEST"
+      SERVER_DESCRIPTION: "servidor de teste"
+      PLAYERS: 8
+      PORT: 8211
+      QUERY_PORT: 27015
+      SERVER_PASSWORD: "teste123"
+      ADMIN_PASSWORD: "adminteste"
+      MULTITHREADING: true
+      UPDATE_ON_BOOT: true
+      # No teste: backup e auto-update DESLIGADOS (nao polui o R2 nem atualiza sem querer)
+      BACKUP_ENABLED: false
+      AUTO_UPDATE_ENABLED: false
+      AUTO_REBOOT_ENABLED: false
+      AUTO_PAUSE_ENABLED: false
+    volumes:
+      - palworld_test_data:/palworld
+
+volumes:
+  palworld_test_data:

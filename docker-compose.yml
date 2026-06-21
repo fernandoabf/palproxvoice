@@ -1,0 +1,16 @@
+services:
+  voice:
+    build: ./server
+    container_name: palproxvoice
+    restart: unless-stopped
+    ports:
+      # 0.0.0.0 = acessivel fora do docker (host/LAN), nao so dentro do container.
+      # HTTP_PORT: porta no HOST. No WSL2 a 8080 costuma estar tomada pelo Windows
+      # -> usa 8088 (.env). Na VPS deixa 8080.
+      - "0.0.0.0:${HTTP_PORT:-8080}:8080"            # sinalizacao (HTTP/ws)
+      - "0.0.0.0:50000-50010:50000-50010/udp"        # midia (audio)
+    environment:
+      VOICE_PASSWORD: "${VOICE_PASSWORD:-test}"
+      # LOCAL no proprio PC: deixa vazio. Pra acessar de OUTRA maquina (LAN/VPS),
+      # poe o IP dessa maquina aqui (pro audio achar caminho de volta). VPS: 69.62.88.69.
+      PUBLIC_IP: "${PUBLIC_IP:-}"
