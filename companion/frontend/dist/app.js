@@ -112,14 +112,14 @@ function selectedServer() { return cfg.servers[cfg.selected] || null; }
 
 function connectSelected() {
   const s = selectedServer();
-  if (!s || !s.url || !s.password) { $('cfgSection').open = true; log('configure um servidor'); return; }
+  if (!s || !s.url) { $('cfgSection').open = true; log('configure um servidor'); return; }
   start(s);
 }
 
 async function start(s) {
   if (ws) return;
   const url = wsURLFrom(s.url);
-  if (!url || !s.password) { log('servidor sem URL/senha'); return; }
+  if (!url) { log('servidor sem URL'); return; } // senha vazia = passwordless (ok)
   hideFallback();
   gotHello = false;
   voiceRangeMeters = s.voiceRangeMeters || 50;
