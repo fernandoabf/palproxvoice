@@ -56,10 +56,15 @@ func (a *App) shutdown(ctx context.Context) {
 	// nothing to clean up for now
 }
 
-// positionListener reads %TEMP%/palproxvoice_pos.txt every 50ms and emits the
-// "pos" event to the frontend whenever the line changes.
+// positionListener reads C:\Users\Public\palproxvoice_pos.txt every 50ms and
+// emits the "pos" event to the frontend whenever the line changes. Caminho FIXO
+// (mesma pasta pra todo processo) — %TEMP% varia entre o jogo e o companion.
 func (a *App) positionListener() {
-	posFile := filepath.Join(os.TempDir(), "palproxvoice_pos.txt")
+	pub := os.Getenv("PUBLIC")
+	if pub == "" {
+		pub = `C:\Users\Public`
+	}
+	posFile := filepath.Join(pub, "palproxvoice_pos.txt")
 
 	var lastPos string
 	ticker := time.NewTicker(50 * time.Millisecond)

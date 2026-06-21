@@ -2,7 +2,8 @@
 -- Le posicao (X,Y,Z) + direcao (Yaw) do player e escreve "x,y,z,yaw" num arquivo
 -- que o companion (ou o receiver de teste) le. Tambem imprime no console ~1x/s.
 local UEHelpers = require("UEHelpers")
-local OUT = (os.getenv("TEMP") or os.getenv("TMP") or ".") .. "\\palproxvoice_pos.txt"
+-- caminho FIXO (mesma pasta pra todo processo, sem depender de %TEMP% que varia)
+local OUT = (os.getenv("PUBLIC") or "C:\\Users\\Public") .. "\\palproxvoice_pos.txt"
 local RATE_MS = 50          -- 20 Hz
 local enabled = true
 local tick = 0

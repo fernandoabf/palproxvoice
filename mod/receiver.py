@@ -2,7 +2,7 @@
 # Le o arquivo que o mod escreve e mostra x,y,z,yaw em tempo real.
 import os, time
 
-f = os.path.join(os.environ.get("TEMP") or os.environ.get("TMP") or ".", "palproxvoice_pos.txt")
+f = os.path.join(os.environ.get("PUBLIC", r"C:\Users\Public"), "palproxvoice_pos.txt")
 print("lendo", f, "- entra no jogo e anda")
 while True:
     try:
