@@ -34,6 +34,8 @@ Produto funcional ponta-a-ponta, validado com pessoas reais pela internet.
 ### Corrigido
 - **auto-connect não pegava quem entrava pela lista do Steam** (só Direct Connect, via `GameUserSettings.ini`). Agora o `PalOptionSaveGame` cobre os dois.
 - mic cai pro dispositivo padrão sem `OverconstrainedError`; não reconecta em dobro.
+- **instalador** acha o Palworld dentro/ao redor da pasta escolhida (antes exigia a raiz exata) + botão **"Procurar nos discos"** que varre e lista todos os Palworlds.
+- **ducking de comunicação do Windows** (mic abaixava todos os outros sons): o **.exe** grava `UserDuckingPreference=3` no HKCU do **usuário** — o instalador, rodando como admin, podia gravar no hive errado.
 
 ### Notas / limites honestos
 - posição é **client-reported** → spoofável. Anti-spoof vem na V1.5.
