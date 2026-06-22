@@ -27,9 +27,13 @@ Cada track de áudio sai com `StreamID = id do peer`, pro companion casar **áud
 
 ## Para jogadores
 
-1. Baixe o instalador da [última release](../../releases) (`PalProxVoice-Installer`).
-2. Rode — ele acha o Palworld, instala UE4SS + o mod + o companion e configura o auto-start.
+1. Baixe o instalador da [última release](../../releases) (`PalProxVoice-Setup.exe`).
+2. Rode — ele acha o Palworld (ou clique **Procurar em um disco** pra varrer), instala UE4SS + o mod + o companion e configura o auto-start.
 3. Entre no jogo. O companion **detecta o servidor sozinho** e conecta a voz. Use fone. 🎧
+
+> **"O Windows protegeu o computador"?** É o SmartScreen avisando que o app ainda
+> não tem assinatura de código reconhecida — normal pra binário novo/open-source.
+> Clique em **Mais informações → Executar assim mesmo**. (Assinatura de código no roadmap.)
 
 Sem instalador: pegue `PalProxVoice-UE4SS.zip` (UE4SS + mod, extrai em `Pal\Binaries\<Win64|WinGDK>\`) e `palproxvoice.exe` (companion) na release.
 

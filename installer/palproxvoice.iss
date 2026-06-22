@@ -48,7 +48,8 @@ const
   ATTR_DIR = $10; // FILE_ATTRIBUTE_DIRECTORY
 
 var
-  PalRoot: String; // raiz do Palworld resolvida em runtime; usada por GetBinDir
+  PalRoot: String;        // raiz do Palworld resolvida em runtime; usada por GetBinDir
+  ScanButton: TNewButton; // botao "Procurar em um disco" na tela de pasta
 
 // uma pasta e raiz do Palworld se tiver Pal\Binaries dentro
 function HasBinaries(dir: String): Boolean;
@@ -187,6 +188,128 @@ begin
     Result := root + '\Pal\Binaries\WinGDK'
   else
     Result := root + '\Pal\Binaries\Win64';
+end;
+
+// varre um disco (limitado) e junta TODAS as raizes do Palworld (pasta com Pal\Binaries)
+procedure ScanForPalworld(dir: String; depth: Integer; found: TStringList);
+var
+  fr: TFindRec;
+  nm: String;
+begin
+  if depth < 0 then
+    exit;
+  if HasBinaries(dir) then
+  begin
+    if found.IndexOf(dir) < 0 then
+      found.Add(dir);
+    exit; // achou um jogo aqui; nao precisa entrar mais fundo
+  end;
+  if FindFirst(dir + '\*', fr) then
+  try
+    repeat
+      if ((fr.Attributes and ATTR_DIR) <> 0) and (fr.Name <> '.') and (fr.Name <> '..') then
+      begin
+        nm := Lowercase(fr.Name);
+        // pula pastas de sistema/ruido pra acelerar a varredura
+        if (nm <> 'windows') and (nm <> 'windows.old') and (nm <> '$recycle.bin')
+          and (nm <> 'system volume information') and (nm <> 'appdata')
+          and (nm <> 'programdata') and (nm <> 'msocache') then
+          ScanForPalworld(dir + '\' + fr.Name, depth - 1, found);
+      end;
+    until not FindNext(fr);
+  finally
+    FindClose(fr);
+  end;
+end;
+
+// mostra a lista de jogos achados pra escolher; '' se cancelar
+function PickFromList(items: TStringList): String;
+var
+  frm: TSetupForm;
+  lb: TNewListBox;
+  bOk, bCancel: TNewButton;
+  i: Integer;
+begin
+  Result := '';
+  frm := CreateCustomForm;
+  try
+    frm.Caption := 'Escolha o Palworld';
+    frm.ClientWidth := ScaleX(520);
+    frm.ClientHeight := ScaleY(320);
+    frm.Position := poScreenCenter;
+    lb := TNewListBox.Create(frm);
+    lb.Parent := frm;
+    lb.SetBounds(ScaleX(14), ScaleY(14), ScaleX(492), ScaleY(248));
+    for i := 0 to items.Count - 1 do
+      lb.Items.Add(items[i]);
+    if lb.Items.Count > 0 then
+      lb.ItemIndex := 0;
+    bOk := TNewButton.Create(frm);
+    bOk.Parent := frm;
+    bOk.Caption := 'Usar';
+    bOk.SetBounds(ScaleX(330), ScaleY(276), ScaleX(82), ScaleY(30));
+    bOk.ModalResult := mrOk;
+    bCancel := TNewButton.Create(frm);
+    bCancel.Parent := frm;
+    bCancel.Caption := 'Cancelar';
+    bCancel.SetBounds(ScaleX(422), ScaleY(276), ScaleX(82), ScaleY(30));
+    bCancel.ModalResult := mrCancel;
+    frm.ActiveControl := lb;
+    if (frm.ShowModal = mrOk) and (lb.ItemIndex >= 0) then
+      Result := lb.Items[lb.ItemIndex];
+  finally
+    frm.Free;
+  end;
+end;
+
+procedure ScanButtonClick(Sender: TObject);
+var
+  drive, picked, oldCap: String;
+  found: TStringList;
+begin
+  drive := Copy(ExpandConstant('{sd}'), 1, 2); // disco do sistema, ex 'C:'
+  if not InputQuery('Procurar Palworld', 'Em qual disco procurar? (ex: C:  D:  E:) — pode demorar um pouco', drive) then
+    exit;
+  drive := Trim(drive);
+  if Length(drive) = 1 then
+    drive := drive + ':';
+  if (Length(drive) <> 2) or not DirExists(drive + '\') then
+  begin
+    MsgBox('Disco "' + drive + '" nao encontrado.', mbError, MB_OK);
+    exit;
+  end;
+  found := TStringList.Create;
+  try
+    oldCap := ScanButton.Caption;
+    ScanButton.Caption := 'Procurando...';
+    ScanButton.Enabled := False;
+    ScanForPalworld(drive + '\', 8, found);
+    ScanButton.Enabled := True;
+    ScanButton.Caption := oldCap;
+    if found.Count = 0 then
+      MsgBox('Nenhum Palworld encontrado em ' + drive, mbInformation, MB_OK)
+    else if found.Count = 1 then
+      WizardForm.DirEdit.Text := found[0]
+    else
+    begin
+      picked := PickFromList(found);
+      if picked <> '' then
+        WizardForm.DirEdit.Text := picked;
+    end;
+  finally
+    found.Free;
+  end;
+end;
+
+// cria o botao "Procurar em um disco" na tela de selecao de pasta
+procedure InitializeWizard;
+begin
+  ScanButton := TNewButton.Create(WizardForm);
+  ScanButton.Parent := WizardForm.SelectDirPage;
+  ScanButton.Caption := 'Procurar em um disco...';
+  ScanButton.SetBounds(WizardForm.DirEdit.Left,
+    WizardForm.DirEdit.Top + ScaleY(56), ScaleX(190), ScaleY(28));
+  ScanButton.OnClick := @ScanButtonClick;
 end;
 
 // resolve a raiz a partir da pasta escolhida; erra so se nao achar Palworld por perto
