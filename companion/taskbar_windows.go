@@ -100,17 +100,27 @@ func mainWindow() uintptr {
 	return first
 }
 
-// applyToolWindow tira a janela da barra de tarefas e do Alt-Tab (tool window),
-// mantendo-a visivel/no topo. Idempotente — o front chama de novo apos cada
-// WindowShow, que e quando o refresh da taskbar pega de verdade.
+// applyToolWindow ajusta o "chrome" da janela conforme o modo (overlayOn):
+//   overlay (compacto) -> tool window: FORA da barra de tarefas e do Alt-Tab.
+//   cheio              -> app window:  NA barra de tarefas e no Alt-Tab. Sem isso,
+//                          ao dar Alt-Tab a janela ia pra tras e nao havia como
+//                          traze-la de volta (so relogando).
+// Idempotente — o front chama de novo apos cada troca de modo / WindowShow, que
+// e quando o refresh da taskbar pega de verdade.
 func applyToolWindow() {
+	overlay := atomic.LoadInt32(&overlayOn) == 1
 	for i := 0; i < 20; i++ {
 		if h := mainWindow(); h != 0 {
 			ex, _, _ := procGetWindowLongPtr.Call(h, gwlExStyle)
-			want := (ex | wsExToolWindow) &^ wsExAppWindow
+			var want uintptr
+			if overlay {
+				want = (ex | wsExToolWindow) &^ wsExAppWindow
+			} else {
+				want = (ex | wsExAppWindow) &^ wsExToolWindow
+			}
 			if want != ex {
 				visible, _, _ := procIsWindowVisible.Call(h)
-				if visible != 0 { // refresh da taskbar so com a janela na tela
+				if visible != 0 { // a taskbar so re-le o estilo escondendo e mostrando
 					procShowWindow.Call(h, swHide)
 				}
 				procSetWindowLongPtr.Call(h, gwlExStyle, want)
