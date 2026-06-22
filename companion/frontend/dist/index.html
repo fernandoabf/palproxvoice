@@ -16,8 +16,25 @@
   body{
     margin:0; font-family:system-ui,-apple-system,"Segoe UI",sans-serif; color:var(--txt);
     background:linear-gradient(160deg,#0b1220 0%,#111827 100%); -webkit-font-smoothing:antialiased;
+    height:100vh; display:flex; flex-direction:column; overflow:hidden;
   }
+  .winbar{display:flex;align-items:center;justify-content:space-between;height:34px;padding:0 4px 0 14px;
+        background:#0b1018;border-bottom:1px solid var(--line);flex:none}
+  .wb-title{font-size:12.5px;font-weight:600;color:var(--muted)}
+  .wb-btns{display:flex;--wails-draggable:no-drag}
+  .wb-btn{width:36px;height:28px;border:none;background:none;color:var(--muted);font-size:13px;cursor:pointer;border-radius:6px}
+  .wb-btn:hover{background:rgba(255,255,255,.08);color:var(--txt)}
+  .wb-btn.close:hover{background:var(--bad);color:#fff}
+  .scroll{flex:1;overflow:auto}
   .app{max-width:880px;margin:0 auto;padding:20px;display:flex;flex-direction:column;gap:16px}
+  #hud{position:fixed;inset:0;display:flex;align-items:center;gap:7px;padding:0 6px 0 14px;font-size:13.5px;
+       background:linear-gradient(180deg,#10182a,#0b1220)}
+  #hud .sdot{width:10px;height:10px}
+  #hud .hud-sep{color:var(--faint)}
+  #hud .hud-lbl{color:var(--muted);font-size:12px;margin-left:3px}
+  #hud #hudExpand{margin-left:auto;--wails-draggable:no-drag;width:28px;height:28px;border:none;background:none;
+       color:var(--muted);cursor:pointer;border-radius:6px;font-size:13px}
+  #hud #hudExpand:hover{background:rgba(255,255,255,.08);color:var(--txt)}
 
   /* header */
   .topbar{display:flex;align-items:center;justify-content:space-between;
@@ -101,6 +118,14 @@
 </style>
 </head>
 <body>
+<div class="winbar" style="--wails-draggable:drag">
+  <span class="wb-title">🦖 PalProxVoice</span>
+  <div class="wb-btns">
+    <button id="tbCompact" class="wb-btn" title="Diminuir (modo overlay)">—</button>
+    <button id="tbClose" class="wb-btn close" title="Fechar">✕</button>
+  </div>
+</div>
+<div class="scroll">
 <div class="app">
 
   <div class="topbar">
@@ -185,6 +210,14 @@
     <div id="log"></div>
   </div>
 
+</div>
+</div>
+<div id="hud" style="--wails-draggable:drag" hidden>
+  <span id="hudDot" class="sdot off"></span>
+  <span id="hudTxt">Offline</span>
+  <span class="hud-sep">·</span>
+  <b id="hudPlayers">0</b><span class="hud-lbl">players</span>
+  <button id="hudExpand" title="Abrir janela">⤢</button>
 </div>
 <script src="app.js"></script>
 </body>

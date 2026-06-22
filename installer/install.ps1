@@ -56,16 +56,16 @@ if (Test-Path (Join-Path $here 'config.json')) {
 }
 Write-Host "Companion instalado: $app"
 
-# ---- 4) auto-start (atalho minimizado na inicializacao) ----
+# ---- 4) auto-start (sobe OCULTO com o Windows, sem aba na barra de tarefas) ----
 $startup = [Environment]::GetFolderPath('Startup')
 $wsh = New-Object -ComObject WScript.Shell
 $lnk = $wsh.CreateShortcut((Join-Path $startup 'PalProxVoice.lnk'))
 $lnk.TargetPath = (Join-Path $app 'palproxvoice.exe')
-$lnk.WindowStyle = 7  # minimizado
+$lnk.Arguments = '-min'  # -min = iniciar escondido (vira overlay quando voce entra no jogo)
 $lnk.Save()
 
-# sobe ele agora tambem
-Start-Process (Join-Path $app 'palproxvoice.exe') -WindowStyle Minimized
+# sobe ele agora VISIVEL (sem -min) pra voce ver a janela e configurar
+Start-Process (Join-Path $app 'palproxvoice.exe')
 
 Write-Host ""
 Write-Host "PRONTO! O companion sobe sozinho com o Windows." -ForegroundColor Green

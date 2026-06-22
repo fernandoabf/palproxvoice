@@ -1,10 +1,10 @@
 ; PalProxVoice — instalador (Inno Setup)
 ; Gera PalProxVoice-Setup.exe: acha o Palworld, instala UE4SS+mod no jogo,
-; instala o companion+config, e configura auto-start (minimizado).
+; instala o companion+config, e configura auto-start (oculto, sem aba na taskbar).
 
 [Setup]
 AppName=PalProxVoice
-AppVersion=0.5
+AppVersion=0.7
 AppPublisher=Fernando Braga
 DefaultDirName={code:DetectPalworld}
 AppendDefaultDirName=no
@@ -37,7 +37,7 @@ Source: "ue4ss\*"; DestDir: "{code:GetBinDir}"; Flags: recursesubdirs createalls
 Root: HKCU; Subkey: "Software\Microsoft\Multimedia\Audio"; ValueType: dword; ValueName: "UserDuckingPreference"; ValueData: "3"
 
 [Icons]
-; auto-start: sobe minimizado com o Windows
+; auto-start: sobe OCULTO (sem aba na barra de tarefas) com o Windows; vira overlay no jogo
 Name: "{userstartup}\PalProxVoice"; Filename: "{localappdata}\PalProxVoice\palproxvoice.exe"; Parameters: "-min"; WorkingDir: "{localappdata}\PalProxVoice"
 
 [Run]

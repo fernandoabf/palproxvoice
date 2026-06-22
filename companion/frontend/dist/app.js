@@ -17,6 +17,7 @@ let micMuted = false, deafened = false, micGain = null;
 let cfg = { servers: [], selected: 0, volume: 1.0, micDeviceId: '', outputDeviceId: '', autoConnect: true };
 
 const $ = id => document.getElementById(id);
+const RT = window.runtime || {}; // runtime do Wails (controle de janela)
 // log colorido com timestamp. level: 'ok' | 'warn' | 'err' | 'info'
 function log(m, level) {
   const col = { ok:'var(--good)', warn:'var(--warn)', err:'var(--bad)', info:'var(--info)' };
@@ -65,9 +66,52 @@ function refreshStatus() {
   $('leave').hidden = (connState === 'off');
   $('connMeta').hidden = (connState !== 'on');
   $('audioCtl').hidden = (connState !== 'on');
+  if ($('hudDot')) { $('hudDot').className = 'sdot ' + cls; $('hudTxt').textContent = txt; }
 }
-function updatePlayers() { $('mPlayers').textContent = Object.values(peers).filter(p => p.panner).length; }
+function updatePlayers() {
+  const n = Object.values(peers).filter(p => p.panner).length;
+  $('mPlayers').textContent = n;
+  if ($('hudPlayers')) $('hudPlayers').textContent = n;
+}
 refreshStatus();
+
+// ----- overlay compacto (janela frameless) -----
+// pequeno = HUD "Conectado · N players" no topo; cheio = dashboard/config.
+let compact = false;
+function setOverlayMode(on)  { try { window.go.main.App.SetOverlayMode(on); } catch (_) {} }
+function applyOverlayStyle() { try { window.go.main.App.ApplyOverlayStyle(); } catch (_) {} }
+async function positionTopRight(w) {
+  try {
+    if (!RT.ScreenGetAll) return;
+    const ss = await RT.ScreenGetAll();
+    const s = ss.find(x => x.isCurrent || x.IsCurrent) || ss.find(x => x.isPrimary || x.IsPrimary) || ss[0];
+    if (!s) return;
+    const sw = s.width || s.Width || (s.size && s.size.width) || (s.Size && s.Size.Width) || 0;
+    if (sw > 0 && RT.WindowSetPosition) RT.WindowSetPosition(sw - w - 24, 28);
+  } catch (_) {}
+}
+async function setCompact(on) {
+  compact = on;
+  setOverlayMode(on); // liga/desliga o watchdog (anti "mostrar area de trabalho")
+  const wb = document.querySelector('.winbar'), sc = document.querySelector('.scroll');
+  if (wb) wb.hidden = on;
+  if (sc) sc.hidden = on;
+  if ($('hud')) $('hud').hidden = !on;
+  if (!RT.WindowSetSize) return;
+  if (on) {
+    RT.WindowSetSize(230, 46);
+    RT.WindowSetAlwaysOnTop && RT.WindowSetAlwaysOnTop(true);
+    await positionTopRight(230);
+  } else {
+    RT.WindowSetAlwaysOnTop && RT.WindowSetAlwaysOnTop(false);
+    RT.WindowSetSize(960, 700);
+    RT.WindowCenter && RT.WindowCenter();
+  }
+  applyOverlayStyle(); // garante "sem aba na taskbar" depois de mostrar/redimensionar
+}
+if ($('tbCompact')) $('tbCompact').onclick = () => setCompact(true);  // Diminuir -> HUD
+if ($('tbClose'))   $('tbClose').onclick   = () => RT.Quit && RT.Quit(); // Fechar
+if ($('hudExpand')) $('hudExpand').onclick = () => setCompact(false);
 
 // ----- eventos do backend: "pos" e "posLost" -----
 function onPos(data) {
@@ -77,30 +121,43 @@ function onPos(data) {
   if ([x, y, z, yaw].some(Number.isNaN)) return;
   me.x = x; me.y = y; me.z = z; me.yaw = yaw;
   posFromGame = true; placeListener();
-  if (!inGame) { inGame = true; refreshStatus(); if (cfg.autoConnect) onGameEnter(); }
+  if (!inGame) {
+    inGame = true; refreshStatus();
+    RT.WindowShow && RT.WindowShow(); // aparece com o jogo, como overlay
+    setCompact(true);
+    if (cfg.autoConnect) onGameEnter();
+  }
 }
 
-// ao entrar no jogo: tenta auto-detectar o IP (Direct Connect); senao, servidor salvo
+// ao entrar no jogo: auto-detecta o IP do servidor atual; senao, servidor salvo.
+// DetectGameServerIP tenta live (mod) -> save (PalOptionSaveGame, pega Direct
+// Connect E lista do Steam) -> ini (so Direct Connect). Antes era so o ini.
 async function onGameEnter() {
   if (ws) return; // ja conectado -> nao abre uma 2a conexao
   if (cfg.autoDetect) {
     let ip = '';
-    try { ip = await window.go.main.App.GameServerIP(); } catch (_) {}
+    try { ip = await window.go.main.App.DetectGameServerIP(); } catch (_) {}
     if (ip) {
       log('servidor do jogo detectado: ' + ip);
       start({ name: 'auto ' + ip, url: 'ws://' + ip + ':' + (cfg.autoPort || 8765), password: cfg.autoPassword || '', voiceRangeMeters: 50 });
       return;
     }
-    log('não detectei o IP (entrou pela lista?) — usando servidor salvo');
+    log('não detectei o IP — usando servidor salvo');
   }
   connectSelected();
 }
 if (window.runtime && window.runtime.EventsOn) {
   window.runtime.EventsOn('pos', onPos);
+  // (re)entrou num mundo -> HUD pequeno de volta, mesmo se tinha minimizado
+  window.runtime.EventsOn('gameEnter', () => { RT.WindowShow && RT.WindowShow(); setCompact(true); });
   window.runtime.EventsOn('posLost', () => {
     inGame = false; posFromGame = false; refreshStatus();
     if (ws) { log('saiu do servidor — voz desconectada'); stop(); }
+    setOverlayMode(false);
+    RT.WindowHide && RT.WindowHide(); // saiu do jogo -> some (sem aba na taskbar)
   });
+  // reabrir o .exe traz a config de volta (single-instance no Go)
+  window.runtime.EventsOn('showConfig', () => { RT.WindowShow && RT.WindowShow(); setCompact(false); });
 } else { log('aviso: fora do Wails (sem posição do jogo)'); }
 
 // ----- WebSocket / WebRTC -----
@@ -331,6 +388,7 @@ $('leave').onclick = stop;
     const s = selectedServer();
     if (s) applyRange(s.voiceRangeMeters || 50);
     log('pronto — esperando entrar no jogo');
+    applyOverlayStyle(); // tira a aba da taskbar ja na abertura
     if (!cfg.autoDetect && (!s || !s.url || !s.password)) { showSettings(); log('adicione um servidor na config'); }
   } catch (err) {
     log('erro ao carregar config: ' + err); showSettings();
