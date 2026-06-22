@@ -50,6 +50,9 @@
   .pad .mute{font-size:15px; font-weight:600}
   .pad .mute.muted{background:#3a1f24; color:var(--bad); border-color:#5a2a30}
   .pad .empty{visibility:hidden}
+  .snap{width:100%; margin-top:10px; padding:13px; background:#10233a; color:var(--accent);
+        border:1px solid #1f3a5a; font-weight:600}
+  .snap:active{background:#16304f}
 
   details{margin-top:8px} summary{cursor:pointer; color:var(--muted); font-size:13px}
   #log{margin-top:8px; white-space:pre-wrap; font-family:ui-monospace,monospace; font-size:11px;
@@ -76,6 +79,7 @@
     <div class="card" style="padding:12px">
       <canvas id="stage" width="480" height="300"></canvas>
       <div class="meta" id="meta">—</div>
+      <button id="snap" class="snap">📍 Colar no player (teste de proximidade)</button>
       <div class="pad">
         <button data-act="turnL" title="virar esquerda">↶</button>
         <button data-act="up"    title="frente">↑</button>
@@ -194,6 +198,16 @@ $('mute').onclick=()=>{
   muted=!muted; if(micTrack) micTrack.enabled=!muted;
   const m=$('mute'); m.classList.toggle('muted',muted); m.textContent = muted?'🔇 Mutado':'🎤 Mic';
 };
+// "colar no player": o celular nao tem posicao do jogo (fica na origem 0,0,0), entao
+// fica longe demais de quem esta in-game. Isto cola a posicao no player ouvido (o mais
+// distante da origem = o real no jogo). Depois ande no Palworld pra a distancia variar.
+$('snap').onclick=()=>{
+  const cands = Object.values(peers).filter(p=>p.hasPos);
+  if(!cands.length){ log('nenhum player com posição ainda — espere ele conectar/se mover'); return; }
+  const t = cands.sort((a,b)=>(b.x*b.x+b.y*b.y)-(a.x*a.x+a.y*a.y))[0];
+  me.x=t.x; me.y=t.y; me.z=t.z; placeListener();
+  log(`colado no player em (${me.x.toFixed(0)},${me.y.toFixed(0)}) — agora ande no jogo pra testar o volume mudando`);
+};
 
 // ----- conectar / desconectar -----
 $('go').onclick = connect;
@@ -254,7 +268,7 @@ async function connect(){
     }
     if(m.event==='candidate'){ try{ await pc.addIceCandidate(JSON.parse(m.data)); }catch(_){} }
     if(m.event==='pos'){ const [x,y,z,yaw]=m.data.split(',').map(Number);
-      placePanner(peers[m.id]=Object.assign(peers[m.id]||{},{x,y,z,yaw})); }
+      placePanner(peers[m.id]=Object.assign(peers[m.id]||{},{x,y,z,yaw,hasPos:true})); }
   };
 
   ws.onerror = ()=>{ if(!gotHello) fail('falha de conexão'); };
