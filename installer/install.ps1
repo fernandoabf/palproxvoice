@@ -28,11 +28,30 @@ function Find-Palworld {
   return $null
 }
 
+# resolve a RAIZ do Palworld a partir de qualquer pasta perto: sobe ate um
+# ancestral com Pal\Binaries; senao procura pra baixo (ex: a 'common' do Steam).
+function Resolve-PalRoot([string]$dir) {
+  if (-not $dir) { return $null }
+  $cur = $dir.TrimEnd('\')
+  for ($i = 0; $i -lt 5 -and $cur; $i++) {
+    if (Test-Path (Join-Path $cur 'Pal\Binaries')) { return $cur }
+    $cur = Split-Path $cur -Parent
+  }
+  if (Test-Path $dir) {
+    $hit = Get-ChildItem -Path $dir -Directory -Recurse -Depth 3 -ErrorAction SilentlyContinue |
+      Where-Object { Test-Path (Join-Path $_.FullName 'Pal\Binaries') } | Select-Object -First 1
+    if ($hit) { return $hit.FullName }
+  }
+  return $null
+}
+
 $game = Find-Palworld
 if (-not $game) {
   Write-Host "Nao achei o Palworld automaticamente." -ForegroundColor Yellow
-  $game = (Read-Host "Cola o caminho da pasta do Palworld (a que tem a pasta 'Pal')").Trim('"')
+  $typed = (Read-Host "Cola a pasta do Palworld (procuro o jogo dentro dela)").Trim('"')
+  $game = Resolve-PalRoot $typed
 }
+if (-not $game) { Write-Host "Nao achei o Palworld nessa pasta." -ForegroundColor Red; exit 1 }
 
 $bin = $null
 foreach ($s in 'Win64', 'WinGDK') {
