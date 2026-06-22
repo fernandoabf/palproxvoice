@@ -37,7 +37,7 @@ Produto funcional ponta-a-ponta, validado com pessoas reais pela internet.
 - **instalador** acha o Palworld dentro/ao redor da pasta escolhida (antes exigia a raiz exata) + botão **"Procurar nos discos"** que varre e lista todos os Palworlds.
 - **ducking de comunicação do Windows** (mic abaixava todos os outros sons): o **.exe** grava `UserDuckingPreference=3` no HKCU do **usuário** — o instalador, rodando como admin, podia gravar no hive errado.
 - **janela sumia no Alt+Tab** em modo cheio: ela era *tool window* (fora do Alt+Tab/taskbar) e ia pra trás sem volta. Agora cheio = app window normal; *tool window* só no overlay compacto.
-- **atualizar instalação existente**: o instalador fecha o companion em execução antes de copiar (o `.exe` travado fazia o update falhar).
+- **atualizar instalação existente**: o instalador fecha o companion em execução antes de copiar (o `.exe` travado fazia o update falhar) e **barra com aviso claro se o Palworld estiver aberto** (os DLLs do UE4SS ficam em uso → antes quebrava no meio).
 
 ### Notas / limites honestos
 - posição é **client-reported** → spoofável. Anti-spoof vem na V1.5.

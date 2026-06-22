@@ -295,8 +295,17 @@ function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   rc: Integer;
 begin
-  Exec('taskkill.exe', '/im palproxvoice.exe /f', '', SW_HIDE, ewWaitUntilTerminated, rc);
   Result := '';
+  // o UE4SS (dwmapi.dll/UE4SS.dll) fica carregado e TRAVADO enquanto o jogo roda;
+  // nao da pra atualizar com o Palworld aberto -> avisa e aborta (em vez de falhar
+  // no meio deixando a instalacao quebrada).
+  if FindWindowByWindowName('Palworld') <> 0 then
+  begin
+    Result := 'O Palworld esta aberto. Feche o jogo antes de instalar/atualizar — os arquivos do UE4SS ficam em uso enquanto ele roda.';
+    exit;
+  end;
+  // jogo fechado: mata o companion em execucao (auto-start) pra liberar o .exe
+  Exec('taskkill.exe', '/im palproxvoice.exe /f', '', SW_HIDE, ewWaitUntilTerminated, rc);
 end;
 
 // resolve a raiz a partir da pasta escolhida; erra so se nao achar Palworld por perto
