@@ -6,3 +6,6 @@
 
 # saida do wails build
 companion/build/bin/
+# scaffolding + bindings gerados pelo wails build
+companion/build/
+companion/frontend/wailsjs/
