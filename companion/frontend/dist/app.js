@@ -226,7 +226,10 @@ async function start(s) {
     masterGain = actx.createGain(); masterGain.gain.value = deafened ? 0 : masterVolume; masterGain.connect(actx.destination);
   }
   if (actx.state === 'suspended') { try { await actx.resume(); } catch (_) {} }
-  if (cfg.outputDeviceId && actx.setSinkId) { try { await actx.setSinkId(cfg.outputDeviceId); } catch (_) {} }
+  // saida no device MULTIMEDIA, nunca no de "Comunicacao": o Chromium manda a saida
+  // WebRTC pro device de comunicacao por padrao, e abrir render nele faz o Windows
+  // DUCAR (~80%) todos os outros sons. ESTE e o gatilho real do "ensurdecer".
+  if (actx.setSinkId) { try { await actx.setSinkId(cfg.outputDeviceId || ''); } catch (_) {} }
   placeListener();
 
   ws = new WebSocket(url);
@@ -239,6 +242,9 @@ async function start(s) {
     const panner = new PannerNode(actx, { panningModel: 'HRTF', distanceModel: 'inverse', refDistance: 2, maxDistance: voiceRangeMeters, rolloffFactor: 1 });
     src.connect(panner).connect(masterGain);
     const a = new Audio(); a.muted = true; a.srcObject = e.streams[0];
+    // o <audio> (keep-alive do stream) tambem tem que sair no device MULTIMEDIA;
+    // sem isso ele vai pro de "Comunicacao" e duca tudo. 'default' = device padrao.
+    if (a.setSinkId) { a.setSinkId(cfg.outputDeviceId || 'default').catch(() => {}); }
     peers[id] = Object.assign(peers[id] || { x:0,y:0,z:0,yaw:0 }, { panner, audio: a });
     placePanner(peers[id]); updatePlayers(); log('ouvindo peer ' + id.slice(0,8), 'ok');
   };
