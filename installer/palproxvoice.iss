@@ -222,44 +222,25 @@ begin
   end;
 end;
 
-// mostra a lista de jogos achados pra escolher; '' se cancelar
+// mostra os jogos achados um a um (Sim = usar / Nao = proximo / Cancelar); '' se cancelar
 function PickFromList(items: TStringList): String;
 var
-  frm: TSetupForm;
-  lb: TNewListBox;
-  bOk, bCancel: TNewButton;
-  i: Integer;
+  i, r: Integer;
 begin
   Result := '';
-  frm := CreateCustomForm;
-  try
-    frm.Caption := 'Escolha o Palworld';
-    frm.ClientWidth := ScaleX(520);
-    frm.ClientHeight := ScaleY(320);
-    frm.Position := poScreenCenter;
-    lb := TNewListBox.Create(frm);
-    lb.Parent := frm;
-    lb.SetBounds(ScaleX(14), ScaleY(14), ScaleX(492), ScaleY(248));
-    for i := 0 to items.Count - 1 do
-      lb.Items.Add(items[i]);
-    if lb.Items.Count > 0 then
-      lb.ItemIndex := 0;
-    bOk := TNewButton.Create(frm);
-    bOk.Parent := frm;
-    bOk.Caption := 'Usar';
-    bOk.SetBounds(ScaleX(330), ScaleY(276), ScaleX(82), ScaleY(30));
-    bOk.ModalResult := mrOk;
-    bCancel := TNewButton.Create(frm);
-    bCancel.Parent := frm;
-    bCancel.Caption := 'Cancelar';
-    bCancel.SetBounds(ScaleX(422), ScaleY(276), ScaleX(82), ScaleY(30));
-    bCancel.ModalResult := mrCancel;
-    frm.ActiveControl := lb;
-    if (frm.ShowModal = mrOk) and (lb.ItemIndex >= 0) then
-      Result := lb.Items[lb.ItemIndex];
-  finally
-    frm.Free;
+  for i := 0 to items.Count - 1 do
+  begin
+    r := MsgBox('Encontrei um Palworld em:' + #13#10#13#10 + items[i] + #13#10#13#10
+      + 'Usar este?  (Nao = ver o proximo)', mbConfirmation, MB_YESNOCANCEL);
+    if r = IDYES then
+    begin
+      Result := items[i];
+      exit;
+    end;
+    if r = IDCANCEL then
+      exit;
   end;
+  MsgBox('Sem mais opcoes encontradas.', mbInformation, MB_OK);
 end;
 
 procedure ScanButtonClick(Sender: TObject);
