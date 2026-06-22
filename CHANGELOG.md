@@ -21,6 +21,7 @@ Produto funcional ponta-a-ponta, validado com pessoas reais pela internet.
   - controles de áudio: volume de entrada/saída, **mutar mic**, **deafen**; escolher microfone e saída.
   - fecha a voz sozinho ao sair do servidor; aparece/some junto com o jogo.
 - **auto-detecção do IP do servidor** — `DetectGameServerIP()`: tenta o mod C++ (sessão atual) → `PalOptionSaveGame` → `GameUserSettings.ini`. Cobre **Direct Connect e join pela lista do Steam**. ([`companion/serverdetect.go`](companion/serverdetect.go), com teste)
+- **voz mais limpa** — captura com `echoCancellation`/`noiseSuppression`/`autoGainControl`/mono; Opus com **FEC** (`useinbandfec=1`, corrige perda de pacote), mono e **bitrate 48 kbps** (`setParameters` + SDP).
 - **mod C++** ([`mod-live/`](mod-live/)) — _scaffold_ que serve o IP da sessão atual por socket local via `LowLevelGetRemoteAddress` (build no Windows).
 - **instalador 1-clique** (Inno Setup) — acha o Palworld em qualquer biblioteca Steam, instala UE4SS + mod + companion + config e configura auto-start.
 - **CI** — GitHub Actions no push de tag `v*`: builda o companion (Windows) e anexa `palproxvoice.exe`, `PalProxVoice-mod.zip` e o bundle `PalProxVoice-UE4SS.zip` (UE4SS v3.0.1 + mod) na release.
@@ -35,7 +36,7 @@ Produto funcional ponta-a-ponta, validado com pessoas reais pela internet.
 - **auto-connect não pegava quem entrava pela lista do Steam** (só Direct Connect, via `GameUserSettings.ini`). Agora o `PalOptionSaveGame` cobre os dois.
 - mic cai pro dispositivo padrão sem `OverconstrainedError`; não reconecta em dobro.
 - **instalador** acha o Palworld dentro/ao redor da pasta escolhida (antes exigia a raiz exata) + botão **"Procurar nos discos"** que varre e lista todos os Palworlds.
-- **ducking de comunicação do Windows** (mic abaixava todos os outros sons): o **.exe** grava `UserDuckingPreference=3` no HKCU do **usuário** — o instalador, rodando como admin, podia gravar no hive errado.
+- **ducking de comunicação do Windows** (mic abaixava todos os outros sons): o **.exe** grava `UserDuckingPreference=3` no HKCU do **usuário** (o instalador, rodando como admin, podia gravar no hive errado) e **reaplica a chave logo antes de conectar** — a sessão de comunicação do Windows lê o valor fresco ao abrir, sem precisar relogar.
 - **janela sumia no Alt+Tab** em modo cheio: ela era *tool window* (fora do Alt+Tab/taskbar) e ia pra trás sem volta. Agora cheio = app window normal; *tool window* só no overlay compacto.
 - **atualizar instalação existente**: o instalador fecha o companion em execução antes de copiar (o `.exe` travado fazia o update falhar) e **barra com aviso claro se o Palworld estiver aberto** (os DLLs do UE4SS ficam em uso → antes quebrava no meio).
 

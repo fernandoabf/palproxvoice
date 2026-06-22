@@ -163,6 +163,32 @@ if (window.runtime && window.runtime.EventsOn) {
 // ----- WebSocket / WebRTC -----
 let ws = null, pc = null, posTimer = null, gotHello = false;
 
+// qualidade de audio: liga FEC (corrige perda de pacote), forca mono e bitrate alvo
+function tuneOpus(sdp) {
+  const m = sdp.match(/a=rtpmap:(\d+)\s+opus/i); if (!m) return sdp;
+  const pt = m[1];
+  const re = new RegExp('(a=fmtp:' + pt + ' )([^\\r\\n]*)');
+  if (re.test(sdp)) {
+    return sdp.replace(re, (_, h, params) => {
+      const kv = params.split(';').filter(Boolean);
+      const set = (k, v) => { const i = kv.findIndex(x => x.trim().startsWith(k + '=')); if (i >= 0) kv[i] = k + '=' + v; else kv.push(k + '=' + v); };
+      set('useinbandfec', '1'); set('stereo', '0'); set('sprop-stereo', '0'); set('maxaveragebitrate', '48000');
+      return h + kv.join(';');
+    });
+  }
+  return sdp.replace(new RegExp('(a=rtpmap:' + pt + '\\s+opus[^\\r\\n]*\\r?\\n)'),
+    '$1a=fmtp:' + pt + ' minptime=10;useinbandfec=1;stereo=0;sprop-stereo=0;maxaveragebitrate=48000\r\n');
+}
+// sobe o bitrate do mic enviado (voz mais cheia/limpa)
+async function setAudioBitrate() {
+  if (!pc) return;
+  const s = pc.getSenders().find(x => x.track && x.track.kind === 'audio');
+  if (!s) return;
+  const p = s.getParameters(); if (!p.encodings || !p.encodings.length) p.encodings = [{}];
+  p.encodings[0].maxBitrate = 48000;
+  try { await s.setParameters(p); } catch (_) {}
+}
+
 function setConn(s) { connState = s; refreshStatus(); }
 function showFallback(name) { $('fbName').textContent = name || ''; $('fallback').hidden = false; }
 function hideFallback() { $('fallback').hidden = true; }
@@ -221,13 +247,18 @@ async function start(s) {
   ws.onopen = async () => {
     ws.send(JSON.stringify({ event: 'auth', data: s.password }));
     try {
+      // reaplica o "nao ducar" ANTES de abrir o mic: o Windows le a preferencia
+      // quando a sessao de comunicacao e criada -> melhor chance de pegar sem relogar.
+      try { await window.go.main.App.FixAudioDucking(); } catch (_) {}
+      // filtros nativos: cancela eco + suprime ruido + ganho automatico + mono
+      const proc = { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 };
       let mic;
       try {
-        const c = { audio: cfg.micDeviceId ? { deviceId: { exact: cfg.micDeviceId } } : true };
+        const c = { audio: cfg.micDeviceId ? Object.assign({}, proc, { deviceId: { exact: cfg.micDeviceId } }) : proc };
         mic = await navigator.mediaDevices.getUserMedia(c);
       } catch (e1) {
         log('mic escolhido indisponível — usando o padrão', 'warn');
-        mic = await navigator.mediaDevices.getUserMedia({ audio: true }); // fallback
+        mic = await navigator.mediaDevices.getUserMedia({ audio: proc }); // fallback (mantem filtros)
       }
       // processa o mic pelo Web Audio -> volume de entrada + mute
       const micSrc = actx.createMediaStreamSource(mic);
@@ -254,9 +285,12 @@ async function start(s) {
             const r = parseFloat(si.range); if (r) applyRange(r); } catch (_) {} return;
     }
     if (m.event === 'offer') {
-      await pc.setRemoteDescription(JSON.parse(m.data));
-      const ans = await pc.createAnswer(); await pc.setLocalDescription(ans);
+      const off = JSON.parse(m.data); off.sdp = tuneOpus(off.sdp); // FEC/mono no encoder local
+      await pc.setRemoteDescription(off);
+      const ans = await pc.createAnswer(); ans.sdp = tuneOpus(ans.sdp);
+      await pc.setLocalDescription(ans);
       ws.send(JSON.stringify({ event: 'answer', data: JSON.stringify(ans) }));
+      setAudioBitrate(); // 48k no mic
     }
     if (m.event === 'candidate') { try { await pc.addIceCandidate(JSON.parse(m.data)); } catch (_) {} }
     if (m.event === 'pos') {

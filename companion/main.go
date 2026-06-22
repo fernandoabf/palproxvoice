@@ -85,6 +85,10 @@ func (a *App) ApplyOverlayStyle() { applyToolWindow() }
 // reverte minimizar-tudo e reforca o always-on-top.
 func (a *App) SetOverlayMode(on bool) { setOverlay(on) }
 
+// FixAudioDucking: o front chama ANTES de conectar pra reaplicar o "nao ducar"
+// no HKCU do usuario, pra a sessao de comunicacao do Windows ler o valor fresco.
+func (a *App) FixAudioDucking() { fixAudioDucking() }
+
 // onSecondInstance: abrir o .exe de novo (atalho/instalador) traz a janela de
 // config de volta, em vez de subir uma 2a instancia.
 func (a *App) onSecondInstance(_ options.SecondInstanceData) {
