@@ -11,7 +11,7 @@ let inGame = false;
 let voiceRangeMeters = 50;
 let masterVolume = 1.0;      // volume de saida
 let inputVol = 1.0;          // volume do microfone (entrada)
-let micMuted = false, deafened = false, micGain = null, micStream = null;
+let micMuted = false, deafened = false, micGain = null, micStream = null, micWs = null;
 
 // config completa (lista de servidores + global)
 let cfg = { servers: [], selected: 0, volume: 1.0, micDeviceId: '', outputDeviceId: '', autoConnect: true };
@@ -221,14 +221,14 @@ async function start(s) {
   setConn('connecting');
 
   if (!actx) {
-    actx = new (window.AudioContext || window.webkitAudioContext)();
+    // 48kHz pra casar com a captura nativa (mic-feed). Carrega o AudioWorklet do mic.
+    actx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
     listener = actx.listener;
     masterGain = actx.createGain(); masterGain.gain.value = deafened ? 0 : masterVolume; masterGain.connect(actx.destination);
+    try { await actx.audioWorklet.addModule('mic-feed.js'); } catch (e) { log('worklet do mic falhou: ' + e, 'err'); }
   }
   if (actx.state === 'suspended') { try { await actx.resume(); } catch (_) {} }
-  // saida no device MULTIMEDIA, nunca no de "Comunicacao": o Chromium manda a saida
-  // WebRTC pro device de comunicacao por padrao, e abrir render nele faz o Windows
-  // DUCAR (~80%) todos os outros sons. ESTE e o gatilho real do "ensurdecer".
+  // saida no device escolhido na config (vazio = device padrao do sistema)
   if (actx.setSinkId) { try { await actx.setSinkId(cfg.outputDeviceId || ''); } catch (_) {} }
   placeListener();
 
@@ -241,9 +241,7 @@ async function start(s) {
     const src = actx.createMediaStreamSource(e.streams[0]);
     const panner = new PannerNode(actx, { panningModel: 'HRTF', distanceModel: 'inverse', refDistance: 2, maxDistance: voiceRangeMeters, rolloffFactor: 1 });
     src.connect(panner).connect(masterGain);
-    const a = new Audio(); a.muted = true; a.srcObject = e.streams[0];
-    // o <audio> (keep-alive do stream) tambem tem que sair no device MULTIMEDIA;
-    // sem isso ele vai pro de "Comunicacao" e duca tudo. 'default' = device padrao.
+    const a = new Audio(); a.muted = true; a.srcObject = e.streams[0]; // keep-alive do stream
     if (a.setSinkId) { a.setSinkId(cfg.outputDeviceId || 'default').catch(() => {}); }
     peers[id] = Object.assign(peers[id] || { x:0,y:0,z:0,yaw:0 }, { panner, audio: a });
     placePanner(peers[id]); updatePlayers(); log('ouvindo peer ' + id.slice(0,8), 'ok');
@@ -253,31 +251,24 @@ async function start(s) {
   ws.onopen = async () => {
     ws.send(JSON.stringify({ event: 'auth', data: s.password }));
     try {
-      // reaplica o "nao ducar" ANTES de abrir o mic: o Windows le a preferencia
-      // quando a sessao de comunicacao e criada -> melhor chance de pegar sem relogar.
-      try { await window.go.main.App.FixAudioDucking(); } catch (_) {}
-      // suprime ruido + ganho automatico + mono.
-      // echoCancellation FICA FALSE de proposito: ligado, o Chromium abre um stream
-      // de referencia de "comunicacao" que faz o Windows DUCAR (abaixar) todos os
-      // outros sons — mesmo com "Nao fazer nada". No fone o EC nao e necessario.
-      const proc = { echoCancellation: false, noiseSuppression: true, autoGainControl: true, channelCount: 1 };
-      let mic;
-      try {
-        const c = { audio: cfg.micDeviceId ? Object.assign({}, proc, { deviceId: { exact: cfg.micDeviceId } }) : proc };
-        mic = await navigator.mediaDevices.getUserMedia(c);
-      } catch (e1) {
-        log('mic escolhido indisponível — usando o padrão', 'warn');
-        mic = await navigator.mediaDevices.getUserMedia({ audio: proc }); // fallback (mantem filtros)
-      }
-      micStream = mic; // guarda pra parar a CAPTURA no disconnect (mic aberto duca)
-      // processa o mic pelo Web Audio -> volume de entrada + mute
-      const micSrc = actx.createMediaStreamSource(mic);
+      // MIC NATIVO: a captura roda em Go via WASAPI com AudioCategory_Other (NAO
+      // Communications), entregue por um WS local de PCM mono float32 @48k. Sem
+      // getUserMedia -> o codec nao entra em "modo comunicacao" -> nao degrada o
+      // resto do audio do sistema. (Esse era o problema do WebRTC do WebView2.)
+      const purl = await window.go.main.App.StartMicCapture();
+      if (!purl || purl.startsWith('erro')) throw new Error(purl || 'sem captura nativa');
+      const micNode = new AudioWorkletNode(actx, 'mic-feed', { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [1] });
       micGain = actx.createGain(); micGain.gain.value = micMuted ? 0 : inputVol;
       const micDest = actx.createMediaStreamDestination();
-      micSrc.connect(micGain).connect(micDest);
+      micNode.connect(micGain).connect(micDest);
       micDest.stream.getAudioTracks().forEach(t => pc.addTrack(t, micDest.stream));
+      // recebe o PCM nativo do Go e alimenta o worklet
+      micWs = new WebSocket(purl);
+      micWs.binaryType = 'arraybuffer';
+      micWs.onmessage = ev => { const f = new Float32Array(ev.data); micNode.port.postMessage(f, [f.buffer]); };
+      micWs.onerror = () => log('WS do mic nativo: erro', 'warn');
       populateDevices();
-      log('mic ok', 'ok');
+      log('mic nativo ok (WASAPI — sem degradar o audio)', 'ok');
     } catch (err) { log('sem microfone (' + err.name + ') — você ouve, mas não fala', 'err'); }
     setConn('on');
     posTimer = setInterval(() => {
@@ -326,11 +317,10 @@ function stop() {
     try { peers[id].panner && peers[id].panner.disconnect(); } catch (_) {}
     delete peers[id];
   }
-  // para a CAPTURA do mic (fica aberta no device de comunicacao e duca ate fechar)
-  if (micStream) { try { micStream.getTracks().forEach(t => t.stop()); } catch (_) {} micStream = null; }
-  // FECHA o AudioContext: ele mantem um stream de saida ABERTO no device e segue
-  // ducando ate o app fechar (por isso "so fechando resolve"). Fechar aqui faz o
-  // DESCONECTAR ja liberar o audio. start() recria o contexto no proximo connect.
+  // para a captura NATIVA (Go/WASAPI) e fecha o WS de PCM
+  if (micWs) { try { micWs.close(); } catch (_) {} micWs = null; }
+  try { window.go.main.App.StopMicCapture(); } catch (_) {}
+  // fecha o AudioContext (start() recria no proximo connect, recarregando o worklet).
   if (actx) { try { actx.close(); } catch (_) {} actx = null; listener = null; masterGain = null; micGain = null; }
   updatePlayers();
   setConn('off');

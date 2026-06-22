@@ -22,6 +22,10 @@ func main() {
 	// de COMUNICACAO ativo, e isso faz o Windows ducar (abaixar) todos os outros
 	// sons enquanto a voz roda. Desliga essa feature (junto com echoCancellation:false
 	// no getUserMedia). WebView2 le essa env var na inicializacao.
+	// O mic agora e capturado NATIVO (WASAPI/go-wca, AudioCategory_Other) fora do
+	// WebView2 — o getUserMedia do Chromium abria a captura como AudioCategory_
+	// Communications, que poe o codec em "modo voz" e degrada todo o audio do
+	// sistema. Mantemos ChromeWideEchoCancellation off por garantia.
 	os.Setenv("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "--disable-features=ChromeWideEchoCancellation")
 
 	app := NewApp()
