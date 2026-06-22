@@ -289,6 +289,16 @@ begin
   ScanButton.OnClick := @ScanButtonClick;
 end;
 
+// fecha o companion em execucao (auto-start) antes de copiar — senao o .exe fica
+// travado e a ATUALIZACAO de uma instalacao existente falha silenciosamente.
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  rc: Integer;
+begin
+  Exec('taskkill.exe', '/im palproxvoice.exe /f', '', SW_HIDE, ewWaitUntilTerminated, rc);
+  Result := '';
+end;
+
 // resolve a raiz a partir da pasta escolhida; erra so se nao achar Palworld por perto
 function NextButtonClick(CurPageID: Integer): Boolean;
 var
