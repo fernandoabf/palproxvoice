@@ -12,13 +12,36 @@ let voiceRangeMeters = 50;
 let masterVolume = 1.0;      // volume de saida
 let inputVol = 1.0;          // volume do microfone (entrada)
 let micMuted = false, deafened = false, micGain = null, micStream = null, micWs = null;
-let micProc = null, meterRAF = 0;
+let micProc = null, meterRAF = 0, rnn = null;
 // processamento do mic (persistido em localStorage; monitor sempre off no inicio)
-const proc = (() => { let p = { highpass:true, comp:true, gate:true, sens:50 };
+const proc = (() => { let p = { highpass:true, comp:true, gate:true, sens:50, rnnoise:false };
   try { p = Object.assign(p, JSON.parse(localStorage.getItem('ppv_proc') || '{}')); } catch (_) {}
   p.monitor = false; return p; })();
 function saveProc(){ try { localStorage.setItem('ppv_proc',
-  JSON.stringify({ highpass:proc.highpass, comp:proc.comp, gate:proc.gate, sens:proc.sens })); } catch (_) {} }
+  JSON.stringify({ highpass:proc.highpass, comp:proc.comp, gate:proc.gate, sens:proc.sens, rnnoise:proc.rnnoise })); } catch (_) {} }
+
+// RNNoise (IA, Xiph BSD): supressao de ruido neural. Processa frames de 480 @48k —
+// exatamente o que o Go envia. Roda na MAIN THREAD ao receber cada frame do WS,
+// antes do worklet. Mata teclado/ventilador ATE enquanto voce fala (o gate so corta
+// no silencio). WASM embutido (rnnoise-sync.js), 100% local.
+async function initRNNoise() {
+  if (rnn) return rnn;
+  try {
+    const factory = (await import('./rnnoise-sync.js')).default;
+    const M = await factory();
+    const FRAME = 480, ctx = M._rnnoise_create(0), ptr = M._malloc(FRAME * 4);
+    rnn = { M, ctx, ptr, FRAME, process(frame) {
+      const heap = M.HEAPF32, base = ptr >> 2;
+      for (let i = 0; i < FRAME; i++) heap[base + i] = frame[i] * 32768; // RNNoise quer faixa int16
+      M._rnnoise_process_frame(ctx, ptr, ptr);
+      const out = new Float32Array(FRAME);
+      for (let i = 0; i < FRAME; i++) out[i] = heap[base + i] / 32768;
+      return out;
+    } };
+    log('RNNoise (IA) carregado', 'ok');
+  } catch (e) { log('RNNoise falhou: ' + e, 'err'); rnn = null; }
+  return rnn;
+}
 // sensibilidade 0..100 -> limiar linear do gate (sens alto = mais sensivel = limiar menor)
 function sensToThreshold(s){ return Math.pow(10, (-25 - (s/100)*35) / 20); }
 
@@ -49,22 +72,46 @@ function audioPos(p) { return [p.x/CM, p.z/CM, p.y/CM]; }
 // audio (sem ziper, sem clique). TC=~60ms -> soa imediato mas glide suave entre updates.
 const SMOOTH = 0.06;
 function ramp(param, v) { if (!param) return; try { param.setTargetAtTime(v, actx.currentTime, SMOOTH); } catch (_) { param.value = v; } }
+// Abordagem A PROVA DE EIXO: o LISTENER fica fixo na origem olhando -Z (frente),
+// up +Y — o frame canonico do Web Audio (right = +X). Cada peer e' posicionado pela
+// DIRECAO RELATIVA (bearing) calculada no plano do jogo a partir da MINHA posicao+yaw.
+// Assim nao dependemos do mapeamento de eixos UE<->WebAudio (que causava o espelhamento):
+// computamos o angulo e jogamos no frame conhecido. Sobra 1 sinal por eixo p/ acertar.
+const AUDIO_FLIP_LR = 1;   // se esquerda/direita vier trocada -> troca p/ -1
+const AUDIO_FLIP_FB = 1;   // se frente/tras vier trocada -> troca p/ -1
+const NEAR_FULL = 1.5;     // ate aqui = 100% direto/centralizado (presente, "colado")
+const NEAR_BLEND = 4;      // daqui pra frente = 100% HRTF (direcional)
 function placeListener() {
   if (!listener) return;
-  const [ax, ay, az] = audioPos(me); const [fx, fy, fz] = fwd(me.yaw);
   if (listener.positionX) {
-    ramp(listener.positionX, ax); ramp(listener.positionY, ay); ramp(listener.positionZ, az);
-    // o vetor (cos,sin) e' continuo no wraparound do yaw (359->0), entao rampar os
-    // componentes ja trata a virada sem salto.
-    ramp(listener.forwardX, fx); ramp(listener.forwardY, fy); ramp(listener.forwardZ, fz);
+    listener.positionX.value = 0; listener.positionY.value = 0; listener.positionZ.value = 0;
+    listener.forwardX.value = 0; listener.forwardY.value = 0; listener.forwardZ.value = -1;
     listener.upX.value = 0; listener.upY.value = 1; listener.upZ.value = 0;
-  } else { listener.setPosition(ax, ay, az); listener.setOrientation(fx, fy, fz, 0, 1, 0); }
+  } else { listener.setPosition(0, 0, 0); listener.setOrientation(0, 0, -1, 0, 1, 0); }
+  for (const id in peers) placePanner(peers[id]); // re-coloca todos relativo a mim
 }
 function placePanner(p) {
   if (!p.panner) return;
-  const [ax, ay, az] = audioPos(p);
-  if (p.panner.positionX) { ramp(p.panner.positionX, ax); ramp(p.panner.positionY, ay); ramp(p.panner.positionZ, az); }
-  else p.panner.setPosition(ax, ay, az);
+  const dx = p.x - me.x, dy = p.y - me.y;
+  const hd = Math.hypot(dx, dy) / CM;                         // distancia horizontal (m)
+  const beta = Math.atan2(dy, dx) - me.yaw * Math.PI / 180;   // bearing relativo ao MEU yaw (0 = frente)
+  const x = AUDIO_FLIP_LR * Math.sin(beta) * hd;              // +X = direita
+  const z = AUDIO_FLIP_FB * -Math.cos(beta) * hd;             // -Z = frente
+  const y = (p.z - me.z) / CM;                                // altura (cue fraco)
+  if (p.panner.positionX) { ramp(p.panner.positionX, x); ramp(p.panner.positionY, y); ramp(p.panner.positionZ, z); }
+  else p.panner.setPosition(x, y, z);
+  // crossfade: perto = direto/centralizado (presente), longe = HRTF (direcional)
+  if (p.directGain && p.pannerGain) {
+    const near = Math.max(0, Math.min(1, (NEAR_BLEND - hd) / (NEAR_BLEND - NEAR_FULL)));
+    // cutoff de proximidade: fade ate o SILENCIO ao chegar no alcance de voz (o modelo
+    // inverse nunca zera sozinho -> senao da pra ouvir gente longe demais).
+    const r = voiceRangeMeters, fs = r * 0.8;
+    const range = hd <= fs ? 1 : Math.max(0, 1 - (hd - fs) / Math.max(1, r - fs));
+    ramp(p.directGain.gain, near * range);
+    ramp(p.pannerGain.gain, (1 - near) * range);
+  }
+  // frente/tras: atras (+Z no frame canonico) = abafado; frente = aberto.
+  if (p.lp) ramp(p.lp.frequency, z > 0 ? 2800 : 18000);
 }
 
 // ----- status (badge + card + dot + metricas) -----
@@ -188,22 +235,55 @@ function tuneOpus(sdp) {
     return sdp.replace(re, (_, h, params) => {
       const kv = params.split(';').filter(Boolean);
       const set = (k, v) => { const i = kv.findIndex(x => x.trim().startsWith(k + '=')); if (i >= 0) kv[i] = k + '=' + v; else kv.push(k + '=' + v); };
-      set('useinbandfec', '1'); set('stereo', '0'); set('sprop-stereo', '0'); set('maxaveragebitrate', '48000');
+      set('useinbandfec', '1'); set('usedtx', '1'); set('stereo', '0'); set('sprop-stereo', '0'); set('maxaveragebitrate', '48000');
       return h + kv.join(';');
     });
   }
   return sdp.replace(new RegExp('(a=rtpmap:' + pt + '\\s+opus[^\\r\\n]*\\r?\\n)'),
-    '$1a=fmtp:' + pt + ' minptime=10;useinbandfec=1;stereo=0;sprop-stereo=0;maxaveragebitrate=48000\r\n');
+    '$1a=fmtp:' + pt + ' minptime=10;useinbandfec=1;usedtx=1;stereo=0;sprop-stereo=0;maxaveragebitrate=48000\r\n');
 }
-// sobe o bitrate do mic enviado (voz mais cheia/limpa)
-async function setAudioBitrate() {
+// define o teto de bitrate do mic enviado (ao vivo, via setParameters)
+async function applyBitrate(br) {
   if (!pc) return;
   const s = pc.getSenders().find(x => x.track && x.track.kind === 'audio');
   if (!s) return;
   const p = s.getParameters(); if (!p.encodings || !p.encodings.length) p.encodings = [{}];
-  p.encodings[0].maxBitrate = 48000;
+  p.encodings[0].maxBitrate = br;
   try { await s.setParameters(p); } catch (_) {}
 }
+async function setAudioBitrate() { await applyBitrate(curBitrate); }
+
+// ----- adaptacao automatica de bitrate (internet ruim) -----
+// le perda de pacote + RTT reais (getStats) e baixa o bitrate sozinho quando a rede
+// piora, subindo de volta devagar quando limpa. Histerese evita oscilar.
+const BR_LEVELS = [16000, 24000, 32000, 48000]; // degraus de bitrate
+let curBitrate = 48000, netTimer = null, cleanStreak = 0;
+function startNetAdapt() {
+  stopNetAdapt();
+  netTimer = setInterval(async () => {
+    if (!pc) return;
+    let loss = 0, rtt = 0, have = false;
+    try {
+      (await pc.getStats()).forEach(r => {
+        if (r.type === 'remote-inbound-rtp' && r.kind === 'audio') {
+          if (typeof r.fractionLost === 'number') { loss = Math.max(loss, r.fractionLost); have = true; }
+          if (typeof r.roundTripTime === 'number') rtt = Math.max(rtt, r.roundTripTime);
+        }
+      });
+    } catch (_) {}
+    if (!have) return;
+    let i = BR_LEVELS.indexOf(curBitrate); if (i < 0) i = BR_LEVELS.length - 1;
+    if (loss > 0.05 || rtt > 0.4) { i = Math.max(0, i - 1); cleanStreak = 0; }            // rede ruim -> desce ja
+    else if (loss < 0.01) { if (++cleanStreak >= 3) { i = Math.min(BR_LEVELS.length - 1, i + 1); cleanStreak = 0; } } // limpa -> sobe devagar
+    else cleanStreak = 0;
+    const target = BR_LEVELS[i];
+    if (target !== curBitrate) {
+      curBitrate = target; applyBitrate(target);
+      log(`[rede] bitrate -> ${target / 1000}kbps (perda ${(loss * 100).toFixed(0)}%, rtt ${(rtt * 1000) | 0}ms)`, 'info');
+    }
+  }, 3000);
+}
+function stopNetAdapt() { if (netTimer) clearInterval(netTimer); netTimer = null; }
 
 function setConn(s) { connState = s; refreshStatus(); }
 function showFallback(name) { $('fbName').textContent = name || ''; $('fallback').hidden = false; }
@@ -255,11 +335,20 @@ async function start(s) {
     const id = e.streams[0].id;
     if (peers[id] && peers[id].panner) return;
     const src = actx.createMediaStreamSource(e.streams[0]);
-    const panner = new PannerNode(actx, { panningModel: 'HRTF', distanceModel: 'inverse', refDistance: 2, maxDistance: voiceRangeMeters, rolloffFactor: 1 });
-    src.connect(panner).connect(masterGain);
+    const panner = new PannerNode(actx, { panningModel: 'HRTF', distanceModel: 'inverse', refDistance: 5, maxDistance: voiceRangeMeters, rolloffFactor: 0.7 });
+    // dois caminhos: HRTF (direcional, longe) + DIRETO/centralizado (presente, colado).
+    // o HRTF "externaliza" e confunde frente/tras no curto alcance; o caminho direto
+    // domina quando perto pra a voz soar "do seu lado/na cabeca", sem parecer atras.
+    const pannerGain = actx.createGain();
+    const directGain = actx.createGain(); directGain.gain.value = 0;
+    // low-pass no caminho HRTF: abafa quem esta ATRAS (reforca frente/tras, reduz a
+    // confusao classica do HRTF) — frente = aberto, atras = abafado.
+    const lp = new BiquadFilterNode(actx, { type: 'lowpass', frequency: 18000, Q: 0.5 });
+    src.connect(panner).connect(lp).connect(pannerGain).connect(masterGain);
+    src.connect(directGain).connect(masterGain);
     const a = new Audio(); a.muted = true; a.srcObject = e.streams[0]; // keep-alive do stream
     if (a.setSinkId) { a.setSinkId(cfg.outputDeviceId || 'default').catch(() => {}); }
-    peers[id] = Object.assign(peers[id] || { x:0,y:0,z:0,yaw:0 }, { panner, audio: a });
+    peers[id] = Object.assign(peers[id] || { x:0,y:0,z:0,yaw:0 }, { panner, pannerGain, directGain, lp, audio: a });
     placePanner(peers[id]); updatePlayers(); log('ouvindo peer ' + id.slice(0,8), 'ok');
   };
   pc.onicecandidate = e => { if (e.candidate) ws.send(JSON.stringify({ event: 'candidate', data: JSON.stringify(e.candidate) })); };
@@ -271,7 +360,7 @@ async function start(s) {
       // Communications), entregue por um WS local de PCM mono float32 @48k. Sem
       // getUserMedia -> o codec nao entra em "modo comunicacao" -> nao degrada o
       // resto do audio do sistema. (Esse era o problema do WebRTC do WebView2.)
-      const purl = await window.go.main.App.StartMicCapture();
+      const purl = await window.go.main.App.StartMicCapture(cfg.micDeviceId || '');
       if (!purl || purl.startsWith('erro')) throw new Error(purl || 'sem captura nativa');
       const micNode = new AudioWorkletNode(actx, 'mic-feed', { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [1] });
       // limpeza do mic (sem reabrir o problema do codec, pois roda no WebAudio/worklet):
@@ -285,12 +374,15 @@ async function start(s) {
       const monitorGain = actx.createGain(); monitorGain.gain.value = 0; monitorGain.connect(actx.destination);
       micProc = { micNode, hp, comp, micGain, micDest, analyser, monitorGain };
       micDest.stream.getAudioTracks().forEach(t => pc.addTrack(t, micDest.stream));
+      if (proc.rnnoise) await initRNNoise();
       applyProc();   // monta a cadeia conforme os toggles + envia gate/sensibilidade ao worklet
       startMeter();
-      // recebe o PCM nativo do Go e alimenta o worklet
+      // recebe o PCM nativo do Go -> [RNNoise] -> worklet
       micWs = new WebSocket(purl);
       micWs.binaryType = 'arraybuffer';
-      micWs.onmessage = ev => { const f = new Float32Array(ev.data); micNode.port.postMessage(f, [f.buffer]); };
+      micWs.onmessage = ev => { let f = new Float32Array(ev.data);
+        if (proc.rnnoise && rnn && f.length === rnn.FRAME) f = rnn.process(f); // supressao IA
+        micNode.port.postMessage(f, [f.buffer]); };
       micWs.onerror = () => log('WS do mic nativo: erro', 'warn');
       populateDevices();
       log('mic nativo ok (WASAPI — sem degradar o audio)', 'ok');
@@ -316,7 +408,7 @@ async function start(s) {
       const ans = await pc.createAnswer(); ans.sdp = tuneOpus(ans.sdp);
       await pc.setLocalDescription(ans);
       ws.send(JSON.stringify({ event: 'answer', data: JSON.stringify(ans) }));
-      setAudioBitrate(); // 48k no mic
+      setAudioBitrate(); startNetAdapt(); // bitrate inicial + adaptacao automatica p/ rede ruim
     }
     if (m.event === 'candidate') { try { await pc.addIceCandidate(JSON.parse(m.data)); } catch (_) {} }
     if (m.event === 'pos') {
@@ -344,6 +436,7 @@ function stop() {
   }
   // para a captura NATIVA (Go/WASAPI) e fecha o WS de PCM
   if (micWs) { try { micWs.close(); } catch (_) {} micWs = null; }
+  stopNetAdapt(); curBitrate = 48000;
   stopMeter(); micProc = null;
   try { window.go.main.App.StopMicCapture(); } catch (_) {}
   // fecha o AudioContext (start() recria no proximo connect, recarregando o worklet).
@@ -391,11 +484,13 @@ function bindProcUI(){
   if (c('pHighpass')) c('pHighpass').checked = proc.highpass;
   if (c('pComp'))     c('pComp').checked     = proc.comp;
   if (c('pGate'))     c('pGate').checked     = proc.gate;
+  if (c('pRnnoise'))  c('pRnnoise').checked  = proc.rnnoise;
   if (c('pMonitor'))  c('pMonitor').checked  = proc.monitor;
   if (c('pSens'))   { c('pSens').value = proc.sens; c('pSensVal').textContent = proc.sens; }
   c('pHighpass') && (c('pHighpass').onchange = e => { proc.highpass = e.target.checked; saveProc(); applyProc(); });
   c('pComp')     && (c('pComp').onchange     = e => { proc.comp = e.target.checked; saveProc(); applyProc(); });
   c('pGate')     && (c('pGate').onchange     = e => { proc.gate = e.target.checked; saveProc(); applyProc(); });
+  c('pRnnoise')  && (c('pRnnoise').onchange  = async e => { proc.rnnoise = e.target.checked; saveProc(); if (proc.rnnoise) { c('pRnnoise').disabled = true; await initRNNoise(); c('pRnnoise').disabled = false; } });
   c('pMonitor')  && (c('pMonitor').onchange  = e => { proc.monitor = e.target.checked; if (micProc) micProc.monitorGain.gain.value = proc.monitor ? 1 : 0; });
   c('pSens')     && (c('pSens').oninput      = e => { proc.sens = +e.target.value; c('pSensVal').textContent = proc.sens; saveProc(); applyProc(); });
 }
@@ -432,21 +527,33 @@ function readServerFields() {
 }
 
 // ----- dispositivos -----
+// Os NOMES dos devices de SAIDA vem do navegador, que so revela os labels apos uma
+// permissao de mic. Como a captura virou nativa (sem getUserMedia), destravamos os
+// labels UMA vez (rapido, fora da chamada): abre o mic e fecha na hora. Nao reintroduz
+// o problema do codec na voz (a chamada segue 100% nativa).
+let labelsUnlocked = false;
+async function unlockDeviceLabels() {
+  if (labelsUnlocked) return;
+  try { const t = await navigator.mediaDevices.getUserMedia({ audio: true }); t.getTracks().forEach(x => x.stop()); labelsUnlocked = true; }
+  catch (_) {}
+}
 async function populateDevices() {
-  let devices = []; try { devices = await navigator.mediaDevices.enumerateDevices(); } catch (_) {}
   const mic = $('cfgMic'), out = $('cfgOutput'); mic.innerHTML = ''; out.innerHTML = '';
   const addOpt = (sel, id, label, selId) => { const o = document.createElement('option'); o.value = id;
     o.textContent = label || (id ? id.slice(0,10) : 'Padrão'); if (id === selId) o.selected = true; sel.appendChild(o); };
-  addOpt(mic, '', 'Padrão', cfg.micDeviceId); addOpt(out, '', 'Padrão', cfg.outputDeviceId);
+  // MIC: devices NATIVOS do Windows (WASAPI, via Go) — e' o que a captura realmente usa.
+  addOpt(mic, '', 'Padrão do Windows', cfg.micDeviceId);
+  try { const mics = await window.go.main.App.ListMicDevices();
+    (mics || []).forEach(d => addOpt(mic, d.id, d.name, cfg.micDeviceId)); } catch (_) {}
+  // SAIDA: devices do navegador (a saida usa setSinkId/WebAudio).
+  addOpt(out, '', 'Padrão', cfg.outputDeviceId);
+  let devices = []; try { devices = await navigator.mediaDevices.enumerateDevices(); } catch (_) {}
   let hasLabels = false;
-  devices.forEach(d => { if (d.label) hasLabels = true;
-    if (d.kind === 'audioinput')  addOpt(mic, d.deviceId, d.label, cfg.micDeviceId);
-    if (d.kind === 'audiooutput') addOpt(out, d.deviceId, d.label, cfg.outputDeviceId); });
-  $('cfgDevHint').textContent = hasLabels ? '' : '"Atualizar dispositivos" pra ver os nomes';
+  devices.forEach(d => { if (d.kind === 'audiooutput') { if (d.label) hasLabels = true; addOpt(out, d.deviceId, d.label, cfg.outputDeviceId); } });
+  $('cfgDevHint').textContent = hasLabels ? '' : '"Atualizar dispositivos" pra ver os nomes da saída';
 }
 async function refreshDevices() {
-  try { const t = await navigator.mediaDevices.getUserMedia({ audio: true }); t.getTracks().forEach(x => x.stop()); }
-  catch (e) { log('permissão de mic negada: ' + e); }
+  labelsUnlocked = false; await unlockDeviceLabels(); // re-scan: força destravar os nomes
   await populateDevices();
 }
 
@@ -471,6 +578,8 @@ $('cfgInputVol').addEventListener('input', e => { const v = parseFloat(e.target.
 $('muteMic').onclick = () => { micMuted = !micMuted; applyInput(); updateAudioBtns(); };
 $('deafen').onclick  = () => { deafened = !deafened; applyOutput(); updateAudioBtns(); };
 $('cfgRefreshDevices').addEventListener('click', refreshDevices);
+// mic escolhido aplica na proxima conexao (reconecte pra trocar o device em uso)
+$('cfgMic').addEventListener('change', e => { cfg.micDeviceId = e.target.value || ''; });
 $('cfgServerSel').addEventListener('change', e => { cfg.selected = parseInt(e.target.value) || 0; fillServerFields(selectedServer()); });
 $('cfgAdd').addEventListener('click', () => { cfg.servers.push({ name:'Novo', url:'', password:'', voiceRangeMeters:50 }); cfg.selected = cfg.servers.length-1; renderServerList(); fillServerFields(selectedServer()); });
 $('cfgDel').addEventListener('click', () => { if (!cfg.servers.length) return; cfg.servers.splice(cfg.selected,1); cfg.selected = 0; renderServerList(); fillServerFields(selectedServer()); });
@@ -503,6 +612,7 @@ $('leave').onclick = stop;
     $('cfgAutoPort').value = cfg.autoPort || 8765;
     $('cfgAutoPassword').value = cfg.autoPassword || '';
     renderServerList(); fillServerFields(selectedServer());
+    await unlockDeviceLabels(); // destrava os nomes da saída uma vez (fora da chamada)
     await populateDevices();
     const s = selectedServer();
     if (s) applyRange(s.voiceRangeMeters || 50);
