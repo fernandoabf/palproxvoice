@@ -46,6 +46,7 @@ Filename: "{localappdata}\PalProxVoice\palproxvoice.exe"; Description: "Abrir o 
 [Code]
 const
   ATTR_DIR = $10; // FILE_ATTRIBUTE_DIRECTORY
+  DRIVES = 'CDEFGHIJKLMNOPQRSTUVWXYZ';
 
 var
   PalRoot: String;        // raiz do Palworld resolvida em runtime; usada por GetBinDir
@@ -245,30 +246,25 @@ end;
 
 procedure ScanButtonClick(Sender: TObject);
 var
+  i: Integer;
   drive, picked, oldCap: String;
   found: TStringList;
 begin
-  drive := Copy(ExpandConstant('{sd}'), 1, 2); // disco do sistema, ex 'C:'
-  if not InputQuery('Procurar Palworld', 'Em qual disco procurar? (ex: C:  D:  E:) — pode demorar um pouco', drive) then
-    exit;
-  drive := Trim(drive);
-  if Length(drive) = 1 then
-    drive := drive + ':';
-  if (Length(drive) <> 2) or not DirExists(drive + '\') then
-  begin
-    MsgBox('Disco "' + drive + '" nao encontrado.', mbError, MB_OK);
-    exit;
-  end;
   found := TStringList.Create;
   try
     oldCap := ScanButton.Caption;
     ScanButton.Caption := 'Procurando...';
     ScanButton.Enabled := False;
-    ScanForPalworld(drive + '\', 8, found);
+    for i := 1 to Length(DRIVES) do
+    begin
+      drive := Copy(DRIVES, i, 1) + ':';
+      if DirExists(drive + '\') then
+        ScanForPalworld(drive + '\', 8, found);
+    end;
     ScanButton.Enabled := True;
     ScanButton.Caption := oldCap;
     if found.Count = 0 then
-      MsgBox('Nenhum Palworld encontrado em ' + drive, mbInformation, MB_OK)
+      MsgBox('Nenhum Palworld encontrado nos discos.', mbInformation, MB_OK)
     else if found.Count = 1 then
       WizardForm.DirEdit.Text := found[0]
     else
@@ -287,7 +283,7 @@ procedure InitializeWizard;
 begin
   ScanButton := TNewButton.Create(WizardForm);
   ScanButton.Parent := WizardForm.SelectDirPage;
-  ScanButton.Caption := 'Procurar em um disco...';
+  ScanButton.Caption := 'Procurar Palworld nos discos...';
   ScanButton.SetBounds(WizardForm.DirEdit.Left,
     WizardForm.DirEdit.Top + ScaleY(56), ScaleX(190), ScaleY(28));
   ScanButton.OnClick := @ScanButtonClick;
