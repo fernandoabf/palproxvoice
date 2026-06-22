@@ -12,6 +12,15 @@ let voiceRangeMeters = 50;
 let masterVolume = 1.0;      // volume de saida
 let inputVol = 1.0;          // volume do microfone (entrada)
 let micMuted = false, deafened = false, micGain = null, micStream = null, micWs = null;
+let micProc = null, meterRAF = 0;
+// processamento do mic (persistido em localStorage; monitor sempre off no inicio)
+const proc = (() => { let p = { highpass:true, comp:true, gate:true, sens:50 };
+  try { p = Object.assign(p, JSON.parse(localStorage.getItem('ppv_proc') || '{}')); } catch (_) {}
+  p.monitor = false; return p; })();
+function saveProc(){ try { localStorage.setItem('ppv_proc',
+  JSON.stringify({ highpass:proc.highpass, comp:proc.comp, gate:proc.gate, sens:proc.sens })); } catch (_) {} }
+// sensibilidade 0..100 -> limiar linear do gate (sens alto = mais sensivel = limiar menor)
+function sensToThreshold(s){ return Math.pow(10, (-25 - (s/100)*35) / 20); }
 
 // config completa (lista de servidores + global)
 let cfg = { servers: [], selected: 0, volume: 1.0, micDeviceId: '', outputDeviceId: '', autoConnect: true };
@@ -35,19 +44,26 @@ const fwd = yaw => { const r = yaw * Math.PI / 180; return [Math.cos(r), 0, Math
 
 let actx, listener, masterGain;
 function audioPos(p) { return [p.x/CM, p.z/CM, p.y/CM]; }
+// SUAVIZACAO: posicao/orientacao chegam a ~10-20Hz; aplicar direto (.value=) faz o
+// pan "pular" (HRTF e sensivel). setTargetAtTime faz a engine interpolar em taxa de
+// audio (sem ziper, sem clique). TC=~60ms -> soa imediato mas glide suave entre updates.
+const SMOOTH = 0.06;
+function ramp(param, v) { if (!param) return; try { param.setTargetAtTime(v, actx.currentTime, SMOOTH); } catch (_) { param.value = v; } }
 function placeListener() {
   if (!listener) return;
   const [ax, ay, az] = audioPos(me); const [fx, fy, fz] = fwd(me.yaw);
   if (listener.positionX) {
-    listener.positionX.value = ax; listener.positionY.value = ay; listener.positionZ.value = az;
-    listener.forwardX.value = fx; listener.forwardY.value = fy; listener.forwardZ.value = fz;
+    ramp(listener.positionX, ax); ramp(listener.positionY, ay); ramp(listener.positionZ, az);
+    // o vetor (cos,sin) e' continuo no wraparound do yaw (359->0), entao rampar os
+    // componentes ja trata a virada sem salto.
+    ramp(listener.forwardX, fx); ramp(listener.forwardY, fy); ramp(listener.forwardZ, fz);
     listener.upX.value = 0; listener.upY.value = 1; listener.upZ.value = 0;
   } else { listener.setPosition(ax, ay, az); listener.setOrientation(fx, fy, fz, 0, 1, 0); }
 }
 function placePanner(p) {
   if (!p.panner) return;
   const [ax, ay, az] = audioPos(p);
-  if (p.panner.positionX) { p.panner.positionX.value = ax; p.panner.positionY.value = ay; p.panner.positionZ.value = az; }
+  if (p.panner.positionX) { ramp(p.panner.positionX, ax); ramp(p.panner.positionY, ay); ramp(p.panner.positionZ, az); }
   else p.panner.setPosition(ax, ay, az);
 }
 
@@ -258,10 +274,19 @@ async function start(s) {
       const purl = await window.go.main.App.StartMicCapture();
       if (!purl || purl.startsWith('erro')) throw new Error(purl || 'sem captura nativa');
       const micNode = new AudioWorkletNode(actx, 'mic-feed', { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [1] });
+      // limpeza do mic (sem reabrir o problema do codec, pois roda no WebAudio/worklet):
+      // passa-alta corta zumbido/hum; compressor nivela a voz. O noise gate (silencia
+      // o ruido de fundo no silencio) mora no worklet mic-feed.js.
+      const hp   = new BiquadFilterNode(actx, { type: 'highpass', frequency: 90, Q: 0.707 });
+      const comp = new DynamicsCompressorNode(actx, { threshold: -28, knee: 18, ratio: 3, attack: 0.004, release: 0.18 });
       micGain = actx.createGain(); micGain.gain.value = micMuted ? 0 : inputVol;
       const micDest = actx.createMediaStreamDestination();
-      micNode.connect(micGain).connect(micDest);
+      const analyser = actx.createAnalyser(); analyser.fftSize = 1024;
+      const monitorGain = actx.createGain(); monitorGain.gain.value = 0; monitorGain.connect(actx.destination);
+      micProc = { micNode, hp, comp, micGain, micDest, analyser, monitorGain };
       micDest.stream.getAudioTracks().forEach(t => pc.addTrack(t, micDest.stream));
+      applyProc();   // monta a cadeia conforme os toggles + envia gate/sensibilidade ao worklet
+      startMeter();
       // recebe o PCM nativo do Go e alimenta o worklet
       micWs = new WebSocket(purl);
       micWs.binaryType = 'arraybuffer';
@@ -274,7 +299,7 @@ async function start(s) {
     posTimer = setInterval(() => {
       if (ws && ws.readyState === 1)
         ws.send(JSON.stringify({ event: 'pos', data: `${me.x.toFixed(1)},${me.y.toFixed(1)},${me.z.toFixed(1)},${me.yaw.toFixed(1)}` }));
-    }, 100);
+    }, 50); // 20Hz: dados mais finos; o setTargetAtTime suaviza o intervalo
   };
 
   ws.onmessage = async ev => {
@@ -319,12 +344,62 @@ function stop() {
   }
   // para a captura NATIVA (Go/WASAPI) e fecha o WS de PCM
   if (micWs) { try { micWs.close(); } catch (_) {} micWs = null; }
+  stopMeter(); micProc = null;
   try { window.go.main.App.StopMicCapture(); } catch (_) {}
   // fecha o AudioContext (start() recria no proximo connect, recarregando o worklet).
   if (actx) { try { actx.close(); } catch (_) {} actx = null; listener = null; masterGain = null; micGain = null; }
   updatePlayers();
   setConn('off');
 }
+
+// ----- processamento do mic (toggles + gate + sensibilidade + medidor + monitor) -----
+// remonta a cadeia: micNode(worklet) -> [passa-alta] -> [compressor] -> micGain -> micDest(WebRTC)
+// + tap pro medidor (nivel de ENTRADA) + saida de monitor (ouvir o proprio mic).
+function applyProc(){
+  if (!micProc) return;
+  const { micNode, hp, comp, micGain, micDest, analyser, monitorGain } = micProc;
+  [micNode, hp, comp, micGain].forEach(n => { try { n.disconnect(); } catch (_) {} });
+  let node = micNode;
+  if (proc.highpass) { node.connect(hp); node = hp; }
+  if (proc.comp)     { node.connect(comp); node = comp; }
+  node.connect(micGain);
+  micGain.connect(micDest);            // -> WebRTC (o que os outros ouvem)
+  micGain.connect(monitorGain);        // -> monitor (voce se ouvir)
+  micNode.connect(analyser);           // tap cru pro medidor de nivel
+  monitorGain.gain.value = proc.monitor ? 1 : 0;
+  micNode.port.postMessage({ gate: proc.gate, open: sensToThreshold(proc.sens) }); // gate no worklet
+}
+function startMeter(){
+  stopMeter(); if (!micProc) return;
+  const an = micProc.analyser, buf = new Float32Array(an.fftSize);
+  const fill = $('meterFill'), thr = $('meterThr');
+  const tick = () => {
+    an.getFloatTimeDomainData(buf);
+    let sum = 0; for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+    const db = 20 * Math.log10(Math.sqrt(sum / buf.length) + 1e-9);
+    if (fill) fill.style.width = Math.max(0, Math.min(100, (db + 60) / 60 * 100)) + '%';
+    const tdb = 20 * Math.log10(sensToThreshold(proc.sens) + 1e-9);
+    if (thr) thr.style.left = Math.max(0, Math.min(100, (tdb + 60) / 60 * 100)) + '%';
+    meterRAF = requestAnimationFrame(tick);
+  };
+  tick();
+}
+function stopMeter(){ if (meterRAF) cancelAnimationFrame(meterRAF); meterRAF = 0;
+  const fill = $('meterFill'); if (fill) fill.style.width = '0%'; }
+function bindProcUI(){
+  const c = id => $(id);
+  if (c('pHighpass')) c('pHighpass').checked = proc.highpass;
+  if (c('pComp'))     c('pComp').checked     = proc.comp;
+  if (c('pGate'))     c('pGate').checked     = proc.gate;
+  if (c('pMonitor'))  c('pMonitor').checked  = proc.monitor;
+  if (c('pSens'))   { c('pSens').value = proc.sens; c('pSensVal').textContent = proc.sens; }
+  c('pHighpass') && (c('pHighpass').onchange = e => { proc.highpass = e.target.checked; saveProc(); applyProc(); });
+  c('pComp')     && (c('pComp').onchange     = e => { proc.comp = e.target.checked; saveProc(); applyProc(); });
+  c('pGate')     && (c('pGate').onchange     = e => { proc.gate = e.target.checked; saveProc(); applyProc(); });
+  c('pMonitor')  && (c('pMonitor').onchange  = e => { proc.monitor = e.target.checked; if (micProc) micProc.monitorGain.gain.value = proc.monitor ? 1 : 0; });
+  c('pSens')     && (c('pSens').oninput      = e => { proc.sens = +e.target.value; c('pSensVal').textContent = proc.sens; saveProc(); applyProc(); });
+}
+bindProcUI();
 
 // ----- config / servidores -----
 function applyOutput() { if (masterGain) masterGain.gain.value = deafened ? 0 : masterVolume; }
