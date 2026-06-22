@@ -4,10 +4,46 @@ on:
   push:
     tags:
       - 'v*'
+    branches:
+      - develop
+      - main
+  pull_request:
+    branches:
+      - develop
+      - main
   workflow_dispatch:
 
 jobs:
+  # Build-check rapido: compila Go + roda testes em PR e push de branch (sem release).
+  check:
+    if: github.event_name == 'pull_request' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/'))
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache: true
+          cache-dependency-path: './companion/go.sum'
+
+      - name: Compila + testa o companion
+        working-directory: ./companion
+        run: |
+          go build ./...
+          go test ./...
+
+      - name: Compila + testa o server
+        working-directory: ./server
+        run: |
+          go build ./...
+          go test ./...
+
+  # Release completo (companion + bundle + instalador): so em tag v* ou disparo manual.
   build:
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
     runs-on: windows-latest
     permissions:
       contents: write
