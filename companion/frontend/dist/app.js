@@ -250,8 +250,11 @@ async function start(s) {
       // reaplica o "nao ducar" ANTES de abrir o mic: o Windows le a preferencia
       // quando a sessao de comunicacao e criada -> melhor chance de pegar sem relogar.
       try { await window.go.main.App.FixAudioDucking(); } catch (_) {}
-      // filtros nativos: cancela eco + suprime ruido + ganho automatico + mono
-      const proc = { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 };
+      // suprime ruido + ganho automatico + mono.
+      // echoCancellation FICA FALSE de proposito: ligado, o Chromium abre um stream
+      // de referencia de "comunicacao" que faz o Windows DUCAR (abaixar) todos os
+      // outros sons — mesmo com "Nao fazer nada". No fone o EC nao e necessario.
+      const proc = { echoCancellation: false, noiseSuppression: true, autoGainControl: true, channelCount: 1 };
       let mic;
       try {
         const c = { audio: cfg.micDeviceId ? Object.assign({}, proc, { deviceId: { exact: cfg.micDeviceId } }) : proc };

@@ -18,6 +18,12 @@ import (
 var assets embed.FS
 
 func main() {
+	// O "chrome-wide echo cancellation" do WebView2 mantem um stream de referencia
+	// de COMUNICACAO ativo, e isso faz o Windows ducar (abaixar) todos os outros
+	// sons enquanto a voz roda. Desliga essa feature (junto com echoCancellation:false
+	// no getUserMedia). WebView2 le essa env var na inicializacao.
+	os.Setenv("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "--disable-features=ChromeWideEchoCancellation")
+
 	app := NewApp()
 
 	// auto-start passa "-min" -> inicia OCULTO (sem aba na barra de tarefas);
