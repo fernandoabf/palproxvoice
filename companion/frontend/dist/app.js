@@ -320,7 +320,15 @@ function stop() {
   if (posTimer) { clearInterval(posTimer); posTimer = null; }
   if (pc) { try { pc.close(); } catch (_) {} pc = null; }
   if (ws) { try { ws.close(); } catch (_) {} ws = null; }
-  for (const id in peers) { try { peers[id].panner && peers[id].panner.disconnect(); } catch (_) {} delete peers[id]; }
+  for (const id in peers) {
+    try { if (peers[id].audio) peers[id].audio.srcObject = null; } catch (_) {} // solta o <audio> keep-alive
+    try { peers[id].panner && peers[id].panner.disconnect(); } catch (_) {}
+    delete peers[id];
+  }
+  // FECHA o AudioContext: ele mantem um stream de saida ABERTO no device e segue
+  // ducando ate o app fechar (por isso "so fechando resolve"). Fechar aqui faz o
+  // DESCONECTAR ja liberar o audio. start() recria o contexto no proximo connect.
+  if (actx) { try { actx.close(); } catch (_) {} actx = null; listener = null; masterGain = null; micGain = null; }
   updatePlayers();
   setConn('off');
 }
