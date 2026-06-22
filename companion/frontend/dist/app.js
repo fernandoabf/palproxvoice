@@ -11,7 +11,7 @@ let inGame = false;
 let voiceRangeMeters = 50;
 let masterVolume = 1.0;      // volume de saida
 let inputVol = 1.0;          // volume do microfone (entrada)
-let micMuted = false, deafened = false, micGain = null;
+let micMuted = false, deafened = false, micGain = null, micStream = null;
 
 // config completa (lista de servidores + global)
 let cfg = { servers: [], selected: 0, volume: 1.0, micDeviceId: '', outputDeviceId: '', autoConnect: true };
@@ -269,6 +269,7 @@ async function start(s) {
         log('mic escolhido indisponível — usando o padrão', 'warn');
         mic = await navigator.mediaDevices.getUserMedia({ audio: proc }); // fallback (mantem filtros)
       }
+      micStream = mic; // guarda pra parar a CAPTURA no disconnect (mic aberto duca)
       // processa o mic pelo Web Audio -> volume de entrada + mute
       const micSrc = actx.createMediaStreamSource(mic);
       micGain = actx.createGain(); micGain.gain.value = micMuted ? 0 : inputVol;
@@ -325,6 +326,8 @@ function stop() {
     try { peers[id].panner && peers[id].panner.disconnect(); } catch (_) {}
     delete peers[id];
   }
+  // para a CAPTURA do mic (fica aberta no device de comunicacao e duca ate fechar)
+  if (micStream) { try { micStream.getTracks().forEach(t => t.stop()); } catch (_) {} micStream = null; }
   // FECHA o AudioContext: ele mantem um stream de saida ABERTO no device e segue
   // ducando ate o app fechar (por isso "so fechando resolve"). Fechar aqui faz o
   // DESCONECTAR ja liberar o audio. start() recria o contexto no proximo connect.
