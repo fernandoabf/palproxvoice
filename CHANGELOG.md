@@ -13,6 +13,9 @@ O companion descobre o servidor pelo IP em que você está e conecta a voz sozin
 Produto funcional ponta-a-ponta, validado com pessoas reais pela internet.
 
 ### Adicionado
+- **interface multilíngue (i18n PT/EN)** — toda a UI **e os logs** do painel no idioma escolhido, com seletor 🌐; padrão = idioma do sistema (salvo). Extensível (basta somar ao dicionário).
+- **abre e fecha junto com o Palworld** — um *watcher* leve ([`companion/cmd/watcher`](companion/cmd/watcher)) sobe na inicialização do Windows, lança o companion (oculto) quando o Palworld abre e o companion sai sozinho quando o jogo fecha. O instalador inicia o watcher **logo após instalar** (sem esperar o próximo login).
+- **README bilíngue** — [EN](README.md) + [PT-BR](README.pt-BR.md).
 - **captura de mic NATIVA (WASAPI/go-wca)** — fora do WebView2, com `AudioCategory_Other`. O `getUserMedia` do Chromium abria como categoria de **comunicação** e punha o codec em "modo voz", degradando TODO o áudio do sistema (música/jogo). Agora a captura é nativa (PCM → WS local → AudioWorklet → WebRTC), **sem degradar nada**. Forçada a **48 kHz** (autoconvert) → fim do áudio "robotizado" quando o device muda de taxa (ex.: Discord em modo comunicação).
 - **áudio espacial reescrito** — listener fixo + posição por *bearing* relativo (corrige espelhamento esquerda/direita), **crossfade perto** (presente/centralizado) **↔ longe** (HRTF direcional), cutoff de proximidade (fade ao silêncio no alcance), abafamento de quem está **atrás** (reduz a confusão frente/trás do HRTF) e suavização (`setTargetAtTime`). Alinhado ao Palworld (UE5: cm + câmera via `ControlRotation`).
 - **painel de processamento do mic** — passa-alta, compressor e **noise gate** (sensibilidade + medidor ao vivo) liga/desliga individual; **RNNoise (IA, Xiph BSD, local)** opcional; **🎧 ouvir meu microfone** (monitor). Seleção de **microfone e saída por nome** (mic nativo via WASAPI).

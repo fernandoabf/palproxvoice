@@ -4,7 +4,7 @@
 
 [Setup]
 AppName=PalProxVoice
-AppVersion=0.10.0
+AppVersion=0.11.0
 AppPublisher=Fernando Braga
 DefaultDirName={code:DetectPalworld}
 AppendDefaultDirName=no
@@ -43,7 +43,9 @@ Root: HKCU; Subkey: "Software\Microsoft\Multimedia\Audio"; ValueType: dword; Val
 Name: "{userstartup}\PalProxVoice"; Filename: "{localappdata}\PalProxVoice\palproxvoice-watcher.exe"; WorkingDir: "{localappdata}\PalProxVoice"
 
 [Run]
-Filename: "{localappdata}\PalProxVoice\palproxvoice.exe"; Description: "Abrir o PalProxVoice agora"; Flags: nowait postinstall skipifsilent
+; inicia o WATCHER ja apos instalar (sem esperar o proximo login do Windows) — ele
+; sobe/fecha o companion junto com o Palworld. Roda escondido (sem janela visivel).
+Filename: "{localappdata}\PalProxVoice\palproxvoice-watcher.exe"; Description: "Ativar o PalProxVoice (abre junto com o Palworld)"; Flags: nowait postinstall skipifsilent
 
 [Code]
 const
