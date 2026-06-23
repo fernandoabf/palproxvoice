@@ -121,10 +121,23 @@ Dois eixos: **quem ouve** (todos / só guilda) × **alcance** (proximidade / glo
   validar a associação (guilda, e o "está mesmo no servidor") pela fonte autoritativa
   (REST/mod), nunca pelo que o cliente afirma.
 
+### Push-to-talk (PTT) — _planejado_
+
+**Objetivo:** falar segurando uma tecla, como alternativa ao voice-activity/gate.
+
+- **Tecla configurável** no companion (salva na config).
+- **Modos de transmissão:** _voz aberta (gate)_ ↔ _PTT_ ↔ _mutado_ — escolha do jogador.
+- **PTT por canal:** poder ter modos diferentes por canal — ex.: **proximidade aberta**
+  (gate) e **global/guilda em PTT** (só fala quando segura), evitando spam no canal amplo.
+- **Implementação:** corta/abre o envio no caminho de captura nativa (WASAPI → WS local
+  → WebRTC) sem reabrir o device; reaproveita o `micGain`/gate que já existe. Tecla
+  capturada pela janela do companion (overlay always-on-top) — validar captura global
+  da tecla mesmo com o jogo em foco (pode exigir hook de teclado de baixo nível).
+- **HUD:** indicador "transmitindo" no overlay enquanto a tecla está pressionada.
+
 ### Outros (depois, menor prioridade)
 
 - **Party/grupo** — canal por código pra um subconjunto, sem ser a guilda inteira.
-- **Push-to-talk** por canal (ex.: PTT pro global, voz aberta na proximidade).
 
 ## Decisões travadas
 
