@@ -88,6 +88,37 @@ Guard-rails do `verify` (senão bane jogador honesto):
 - [ ] V2: confirmar UE4SS server-side sob Proton no Palworld (AOB / `StaticConstructObject`)
 - [ ] V2: ler `yaw` (control rotation) de cada player no servidor
 
+## Backlog — canais de voz (aprendizado do concorrente PalVoice)
+
+O PalVoice tem **proximidade + global + guilda**; nós só temos proximidade (pool único).
+O pedido priorizado é o **canal de guilda GLOBAL**.
+
+### Canal de guilda (global) — _planejado_
+
+**Objetivo:** membros da **mesma guilda** se ouvem em **qualquer distância** (voz
+global entre a guilda), **por cima** da proximidade. Ex.: a galera espalhada pelo
+mapa continua se falando; quem não é da guilda só entra pela proximidade.
+
+- **Mix com a proximidade:** a guilda toca num barramento **global** (sem atenuar
+  por distância — volume fixo, sem HRTF ou com leve pan opcional); não-guilda
+  continua no caminho 3D/proximidade. Toggle no companion pra mutar o canal global.
+- **De onde vem a guilda (a decidir):**
+  1. **REST** — checar se `/v1/api/...` expõe guild id por jogador (o `/players`
+     que medimos **não** trazia guilda; ver se há endpoint/campo). Se sim, o
+     servidor de voz agrupa por guild id → zero config.
+  2. **mod** — ler o guild id in-game (probe, como userId/posição) e mandar no join.
+  3. **manual / código** — "canal de guilda" por um código compartilhado, desacoplado
+     da guilda do jogo (mais simples; bom fallback enquanto 1/2 não estão prontos).
+- **Servidor:** o SFU já faz broadcast; é taguear o áudio por **canal** (proximidade
+  vs guilda-global) e rotear. Encaixa na mesma base agnóstica da V1.5.
+- **Anti-spoof:** entrar numa guilda-global de quem você não é membro é um vetor —
+  validar a associação pela fonte autoritativa (REST/mod), não pelo que o cliente diz.
+
+### Outros canais (depois, menor prioridade)
+
+- **Global (push-to-talk)** — falar pra todo mundo do servidor com uma tecla.
+- **Party/grupo** — canal por código pra um subconjunto, sem ser a guilda inteira.
+
 ## Decisões travadas
 
 - **Alpha = checkpoint**; em seguida a companion (Fase 1 + **config/auto-connect**). O teste com a galera acontece já com a companion (sem fase de teste-primeiro).
