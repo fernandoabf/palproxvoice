@@ -77,8 +77,9 @@ func main() {
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	go a.positionListener()
-	startOverlayWatch()   // mantem o overlay vivo contra "mostrar area de trabalho"
-	go fixAudioDucking()  // desliga o ducking de comunicacao no HKCU do usuario
+	startOverlayWatch()          // mantem o overlay vivo contra "mostrar area de trabalho"
+	go fixAudioDucking()         // desliga o ducking de comunicacao no HKCU do usuario
+	startPalworldQuitWatch(ctx)  // sai junto com o Palworld (lifecycle colado ao jogo)
 }
 
 // domReady roda com a janela ja criada -> vira "tool window" (some da barra de

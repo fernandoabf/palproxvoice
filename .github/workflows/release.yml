@@ -71,6 +71,10 @@ jobs:
         working-directory: ./companion
         run: wails build -platform windows/amd64 -o palproxvoice.exe
 
+      - name: Build watcher (abre/fecha o companion com o Palworld, sem console)
+        working-directory: ./companion
+        run: go build -ldflags "-H=windowsgui" -o build/bin/palproxvoice-watcher.exe ./cmd/watcher
+
       - name: Zip do mod UE4SS (so o mod)
         shell: pwsh
         run: Compress-Archive -Path mod/PalProxVoice -DestinationPath PalProxVoice-mod.zip -Force
@@ -97,6 +101,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path inst\ue4ss | Out-Null
           Expand-Archive PalProxVoice-UE4SS.zip -DestinationPath inst\ue4ss -Force
           Copy-Item companion/build/bin/palproxvoice.exe inst/
+          Copy-Item companion/build/bin/palproxvoice-watcher.exe inst/
           Copy-Item companion/config.json.example inst/config.json
           Copy-Item installer/palproxvoice.iss inst/
           & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" inst\palproxvoice.iss
@@ -107,6 +112,7 @@ jobs:
           name: palproxvoice
           path: |
             ./companion/build/bin/palproxvoice.exe
+            ./companion/build/bin/palproxvoice-watcher.exe
             ./PalProxVoice-mod.zip
             ./PalProxVoice-UE4SS.zip
             ./inst/PalProxVoice-Setup.exe
@@ -118,6 +124,7 @@ jobs:
         with:
           files: |
             ./companion/build/bin/palproxvoice.exe
+            ./companion/build/bin/palproxvoice-watcher.exe
             ./PalProxVoice-mod.zip
             ./PalProxVoice-UE4SS.zip
             ./inst/PalProxVoice-Setup.exe

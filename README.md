@@ -1,123 +1,136 @@
 # PalProxVoice
 
-**Voz por proximidade pro Palworld, self-hosted** — tipo o Simple Voice Chat do
-Minecraft. Você ouve quem está perto de você no mundo do jogo, mais alto quanto
-mais perto, com direção (áudio 3D). Sem sala, sem canal: um pool único por
-servidor + senha + proximidade. Nada de serviço de terceiro — tudo roda na sua
-infra.
+**Self-hosted 3D proximity voice chat for Palworld** — think Simple Voice Chat
+(Minecraft), but for Palworld. You hear whoever's near you in the game world,
+louder the closer they are, with real direction (3D / HRTF audio). No rooms, no
+channels: one pool per server + password + proximity. No third-party service —
+everything runs on your own infra.
 
-> Status: **alpha ativo** (milestone **V1**) — validado ponta-a-ponta com pessoas
-> reais pela internet. Baixe a [última release](../../releases) · histórico em
-> [CHANGELOG.md](CHANGELOG.md) · desenho em [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
-> · plano em [docs/ROADMAP.md](docs/ROADMAP.md).
+🇧🇷 **[Leia em Português](README.pt-BR.md)**
 
-> 🎥 **Demo:** _(em breve — clipe de ~20s da voz por proximidade 3D; ouça de **fone** 🎧)_
-<!-- Ao gravar o clipe, salve em docs/demo.gif e descomente o bloco abaixo:
+> Status: **active alpha** (milestone **V1**) — validated end-to-end with real
+> people over the internet. Grab the [latest release](../../releases) · history in
+> [CHANGELOG.md](CHANGELOG.md) · design in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+> · plan in [docs/ROADMAP.md](docs/ROADMAP.md).
+
+> 🎥 **Demo:** _(coming soon — ~20s clip of the 3D proximity voice; listen with **headphones** 🎧)_
+<!-- When you record the clip, save it to docs/demo.gif and uncomment:
 <p align="center">
-  <img src="docs/demo.gif" alt="Voz por proximidade 3D no Palworld" width="680">
+  <img src="docs/demo.gif" alt="3D proximity voice in Palworld" width="680">
 </p>
 -->
 
-## Como funciona
+## Features
 
-Três peças. O jogo nunca fala com o servidor de voz direto — quem faz a ponte é o companion.
+- **3D positional voice** (Web Audio / HRTF) — left/right/front/back + distance, following your in-game camera.
+- **Native low-latency mic capture** (WASAPI) — does **not** degrade the rest of your system audio (the classic browser/`getUserMedia` pitfall).
+- **Optional AI noise suppression** (RNNoise) + noise gate + compressor + a "hear my mic" monitor.
+- **Pick your microphone and output by name.**
+- **Built for bad internet** — Opus FEC + DTX, automatic **adaptive bitrate**, and **auto-reconnect** on drops.
+- **No rooms** — one shared pool per server + password; who you hear is 100% proximity.
+- **One-click installer** (UE4SS + mod + companion + auto-start).
 
-| # | Peça | Onde | O que faz |
+## How it works
+
+Three pieces. The game never talks to the voice server directly — the companion bridges it.
+
+| # | Piece | Where | What it does |
 |---|------|------|-----------|
-| **mod** | UE4SS (Lua) | PC de cada jogador (Windows) | lê posição+direção e escreve num arquivo local |
-| **companion** | app Wails (Go+WebView2) | PC de cada jogador | lê a posição, manda o mic, recebe os outros e **espacializa em 3D** (Web Audio/HRTF) |
-| **server** | Go + pion/webrtc | VPS do dono | SFU: cada mic sobe uma vez e é repassado; relay de posição. Sem sala. |
+| **mod** | UE4SS (Lua) | each player's PC (Windows) | reads position + facing and writes to a local file |
+| **companion** | Wails app (Go + WebView2) | each player's PC | reads the position, sends the mic, receives others and **spatializes in 3D** (Web Audio/HRTF) |
+| **server** | Go + pion/webrtc | owner's VPS | SFU: each mic uploads once and is relayed to all; position relay. No rooms. |
 
-Cada track de áudio sai com `StreamID = id do peer`, pro companion casar **áudio ↔ posição**.
-
----
-
-## Para jogadores
-
-1. Baixe o instalador da [última release](../../releases) (`PalProxVoice-Setup.exe`).
-2. Rode — ele acha o Palworld (ou clique **Procurar em um disco** pra varrer), instala UE4SS + o mod + o companion e configura o auto-start.
-3. Entre no jogo. O companion **detecta o servidor sozinho** e conecta a voz. Use fone. 🎧
-
-> **"O Windows protegeu o computador"?** É o SmartScreen avisando que o app ainda
-> não tem assinatura de código reconhecida — normal pra binário novo/open-source.
-> Clique em **Mais informações → Executar assim mesmo**. (Assinatura de código no roadmap.)
-
-Sem instalador: pegue `PalProxVoice-UE4SS.zip` (UE4SS + mod, extrai em `Pal\Binaries\<Win64|WinGDK>\`) e `palproxvoice.exe` (companion) na release.
+Each audio track carries `StreamID = peer id`, so the companion matches **audio ↔ position**.
 
 ---
 
-## Para donos de servidor
+## For players
 
-O servidor de voz é um container Go. Roda ao lado do seu Palworld (mesma VPS ou outra).
+1. Download the installer from the [latest release](../../releases) (`PalProxVoice-Setup.exe`).
+2. Run it — it finds Palworld (or click **Search a drive** to scan), installs UE4SS + the mod + the companion, and sets up auto-start.
+3. Launch the game. The companion **finds the server by itself** and connects the voice. Use headphones. 🎧
+
+> **"Windows protected your PC"?** That's SmartScreen warning that the app isn't
+> code-signed yet — normal for a new/open-source binary. Click **More info → Run
+> anyway**. (Code signing is on the roadmap.)
+
+No installer? Grab `PalProxVoice-UE4SS.zip` (UE4SS + mod, extract into
+`Pal\Binaries\<Win64|WinGDK>\`) and `palproxvoice.exe` (companion) from the release.
+
+---
+
+## For server owners
+
+The voice server is a Go container. Run it next to your Palworld (same VPS or another).
 
 ```bash
-cp .env.example .env          # defina VOICE_PASSWORD e PUBLIC_IP=<ip-publico-da-vps>
+cp .env.example .env          # set VOICE_PASSWORD and PUBLIC_IP=<vps-public-ip>
 docker compose up -d --build
 ```
 
-- **Porta:** o companion auto-conecta em `IP-do-jogo:8765` por padrão. Exponha o
-  voice nessa porta (mapeie host `8765` → container `8080`) **ou** ajuste o
-  `autoPort` na config do companion pra casar com a sua.
-- **Mic precisa de contexto seguro:** pro acesso via navegador, ponha o voice
-  atrás de um domínio com **TLS** (ex.: Dokploy) e use `wss://`. O companion
-  desktop conecta por IP direto.
-- **Áudio (mídia):** abra **UDP 50000–50010** no firewall. O `PUBLIC_IP` faz o
-  pion anunciar seu IP (sem TURN).
-- **Sem sala:** todo mundo que entra com a senha é um pool único; quem você ouve
-  é 100% proximidade.
+- **Port:** the companion auto-connects to `game-ip:8765` by default. Expose the
+  voice on that port (map host `8765` → container `8080`) **or** adjust `autoPort`
+  in the companion config to match yours.
+- **Mic needs a secure context:** for browser access, put the voice behind a TLS
+  domain (e.g. Dokploy) and use `wss://`. The desktop companion connects by direct IP.
+- **Media (audio):** open **UDP 50000–50010** in the firewall. `PUBLIC_IP` makes
+  pion announce your IP (no TURN).
+- **No rooms:** everyone who joins with the password is one pool; who you hear is
+  100% proximity.
 
-Detalhes de TLS/firewall e um Palworld de teste opcional: ver
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) e `docker-compose.palworld-test.yml`.
+TLS/firewall details and an optional test Palworld: see
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and `docker-compose.palworld-test.yml`.
 
 ---
 
-## Para desenvolvedores
+## For developers
 
-### Layout do repo
+### Repo layout
 
 ```
-mod/PalProxVoice/    mod UE4SS (Lua) — lê posição+yaw, escreve C:\Users\Public\palproxvoice_pos.txt
-companion/           app desktop Wails (Go+WebView2) — voz 3D + auto-connect   (BUILD.md)
-server/              servidor de voz Go (SFU + relay de posição) + Dockerfile + web/ (cliente de teste)
-mod-live/            [V1] mod C++ opcional — IP da sessão atual por socket (scaffold, build no Windows)
-bridge/              [legado] ponte arquivo→HTTP pra navegador puro; o companion já faz isso
-installer/           instalador Inno Setup (UE4SS + mod + companion + auto-start)
+mod/PalProxVoice/    UE4SS mod (Lua) — reads position+yaw, writes C:\Users\Public\palproxvoice_pos.txt
+companion/           Wails desktop app (Go+WebView2) — 3D voice + auto-connect   (BUILD.md)
+server/              Go voice server (SFU + position relay) + Dockerfile + web/ (test client)
+mod-live/            [V1] optional C++ mod — current session IP over a socket (scaffold, build on Windows)
+bridge/              [legacy] file→HTTP bridge for a plain browser; the companion already does this
+installer/           Inno Setup installer (UE4SS + mod + companion + auto-start)
 docs/                ARCHITECTURE.md · ROADMAP.md
-docker-compose*.yml  voice · palworld de teste · local.sh
+docker-compose*.yml  voice · test palworld · local.sh
 ```
 
-### Testar local (sem jogo, sem VPS)
+### Run locally (no game, no VPS)
 
 ```bash
-cp .env.example .env          # VOICE_PASSWORD=test, PUBLIC_IP vazio
-docker compose up --build     # só o voice
+cp .env.example .env          # VOICE_PASSWORD=test, PUBLIC_IP empty
+docker compose up --build     # voice only
 ```
-Abra `http://localhost:8088` em 2 abas (de fone!), mesma senha, **Entrar**. Mova
-com `W A S D`, gire com `← →` — a outra aba muda de lado e volume. Isso exercita o
-SFU + a espacialização sem precisar do Palworld. (Porta = `HTTP_PORT` do `.env`;
-no WSL2 use 8088.) `./local.sh` sobe voice **+** um Palworld de teste juntos.
 
-### Build do companion
+Open `http://localhost:8088` in 2 tabs (headphones!), same password, **Join**. Move
+with `W A S D`, turn with `← →` — the other tab changes side and volume. This
+exercises the SFU + spatialization without Palworld. (Port = `HTTP_PORT` from
+`.env`; on WSL2 use 8088.) `./local.sh` brings up the voice **+** a test Palworld together.
 
-Windows (WebView2) ou via GitHub Actions no push de tag `v*`. Ver
-[companion/BUILD.md](companion/BUILD.md). Testes do Go: `go test ./...` em `companion/`.
+### Build the companion
 
-### Contribuindo
+Windows (WebView2) or via GitHub Actions on a `v*` tag push. See
+[companion/BUILD.md](companion/BUILD.md). Go tests: `go test ./...` in `companion/`.
 
-Issues e PRs bem-vindos. O acoplamento com o jogo é fino e isolado de propósito
-(o Palworld 1.0 sai em 2026-07-10 e updates grandes quebram mods de UE4SS) — veja
-as decisões travadas no [ROADMAP](docs/ROADMAP.md) antes de mexer no `mod/`.
+### Contributing
+
+Issues and PRs welcome. The coupling with the game is thin and isolated on purpose
+(Palworld 1.0 ships 2026-07-10 and big updates break UE4SS mods) — check the locked
+decisions in the [ROADMAP](docs/ROADMAP.md) before touching `mod/`.
 
 ---
 
-## Roadmap (resumo)
+## Roadmap (summary)
 
-- **V1** — auto-connect: o companion acha o servidor pelo IP atual e conecta sozinho.
-- **V1.5** — anti-spoof: protocolo agnóstico de fonte + reconciliação (`verify`/`strict`) por `userId` + IP-match.
-- **V2** — server-side: mod no servidor (Proton) com posição+yaw autoritativos; cliente sem UE4SS.
+- **V1** — auto-connect: the companion finds the server by your current IP and connects on its own.
+- **V1.5** — anti-spoof: source-agnostic protocol + reconciliation (`verify`/`strict`) by `userId` + IP-match.
+- **V2** — server-side: mod on the server (Proton) with authoritative position+yaw; no UE4SS on the client.
 
-Detalhe em [docs/ROADMAP.md](docs/ROADMAP.md).
+Details in [docs/ROADMAP.md](docs/ROADMAP.md).
 
-## Licença
+## License
 
-Ver [LICENSE](LICENSE).
+See [LICENSE](LICENSE).

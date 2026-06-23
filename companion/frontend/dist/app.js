@@ -38,8 +38,8 @@ async function initRNNoise() {
       for (let i = 0; i < FRAME; i++) out[i] = heap[base + i] / 32768;
       return out;
     } };
-    log('RNNoise (IA) carregado', 'ok');
-  } catch (e) { log('RNNoise falhou: ' + e, 'err'); rnn = null; }
+    log(t('lg_rnnoise_ok'), 'ok');
+  } catch (e) { log(t('lg_rnnoise_fail', {e}), 'err'); rnn = null; }
   return rnn;
 }
 // sensibilidade 0..100 -> limiar linear do gate (sens alto = mais sensivel = limiar menor)
@@ -49,6 +49,103 @@ function sensToThreshold(s){ return Math.pow(10, (-25 - (s/100)*35) / 20); }
 let cfg = { servers: [], selected: 0, volume: 1.0, micDeviceId: '', outputDeviceId: '', autoConnect: true };
 
 const $ = id => document.getElementById(id);
+
+// ----- i18n (PT/EN; padrao = idioma do sistema; salvo em localStorage) -----
+const I18N = {
+  pt: {
+    win_min:'Diminuir (modo overlay)', win_close:'Fechar',
+    tagline:'Voz por proximidade no Palworld',
+    fb_msg:'⚠️ Não consegui conectar ao servidor', fb_config:'Configurar', fb_ignore:'Ignorar',
+    st_title:'Status do sistema', m_server:'Servidor', m_players:'Jogadores', m_channel:'Canal', ch_prox:'Proximidade',
+    btn_start:'🎙️ Iniciar voz de proximidade', btn_leave:'Desconectar',
+    st_off:'Offline', sub_off:'Palworld fechado ou voz desligada',
+    st_connecting:'Conectando…', sub_connecting:'estabelecendo conexão',
+    st_searching:'Procurando jogo', sub_searching:'conectado — entre num servidor',
+    st_on:'Conectado', sub_on:'voz de proximidade ativa',
+    mute_on:'🎤 Mic', mute_off:'🔇 Mic mutado', deaf_on:'🔊 Som', deaf_off:'🔇 Sem som',
+    lang:'🌐 Idioma / Language', audio:'Áudio', mic:'Microfone', vol_in:'Volume do microfone (entrada)',
+    out:'Saída de áudio', vol_out:'Volume de saída', refresh:'Atualizar dispositivos',
+    proc_title:'Processamento do microfone',
+    p_highpass:'Passa-alta', p_highpass_h:'(corta zumbido/hum)',
+    p_comp:'Compressor', p_comp_h:'(nivela a voz)',
+    p_gate:'Noise gate', p_gate_h:'(corta ruído de fundo)',
+    p_rnnoise:'Supressão de ruído IA', p_rnnoise_h:'(RNNoise — mata teclado/ventilador até falando)',
+    p_sens:'Sensibilidade do gate',
+    p_meter_hint:'Falando, a barra passa do marcador (branco) → abre. Em silêncio, fica abaixo → corta.',
+    p_monitor:'🎧 Ouvir meu microfone', p_monitor_h:'(teste — use fone)',
+    srv_title:'Servidor', srv_autodetect:'Detectar servidor do jogo (automático)',
+    srv_port:'Porta da voz', srv_passauto:'Senha (auto)', ph_passauto:'vazio = sem senha',
+    srv_manual:'Servidor manual (fallback)', srv_new:'+ Novo', srv_remove:'Remover',
+    srv_name:'Nome', srv_addr:'Endereço', srv_pass:'Senha', srv_range:'Alcance da voz (metros)',
+    srv_autoconnect:'Conectar automaticamente ao entrar no jogo', srv_save:'Salvar',
+    log_title:'Logs do sistema', hud_expand:'Abrir janela', hud_players:'players',
+    // logs do sistema (painel)
+    lg_rnnoise_ok:'RNNoise (IA) carregado', lg_rnnoise_fail:'RNNoise falhou: {e}',
+    lg_game_detected:'servidor do jogo detectado: {ip}', lg_no_ip:'não detectei o IP — usando servidor salvo',
+    lg_left_server:'saiu do servidor — voz desconectada', lg_no_wails:'aviso: fora do Wails (sem posição do jogo)',
+    lg_bitrate:'[rede] bitrate -> {kbps}kbps (perda {loss}%, rtt {rtt}ms)',
+    lg_configure_server:'configure um servidor', lg_no_url:'servidor sem URL',
+    lg_worklet_fail:'worklet do mic falhou: {e}', lg_hearing_peer:'ouvindo peer {id}',
+    lg_mic_ws_err:'WS do mic nativo: erro', lg_mic_ok:'mic nativo ok (WASAPI — sem degradar o áudio)',
+    lg_no_mic:'sem microfone ({err}) — você ouve, mas não fala',
+    lg_error:'ERRO: {data}', lg_connected:'conectado (id {id})', lg_ws_err:'erro de websocket',
+    lg_reconnecting:'conexão caiu — reconectando em {s}s…', lg_not_found:'falhou — não achei o servidor',
+    lg_save_err:'erro ao salvar: {err}', lg_ready:'pronto — esperando entrar no jogo',
+    lg_add_server:'adicione um servidor na config', lg_cfg_err:'erro ao carregar config: {err}',
+  },
+  en: {
+    win_min:'Minimize (overlay mode)', win_close:'Close',
+    tagline:'Voice proximity for Palworld',
+    fb_msg:"⚠️ Couldn't connect to server", fb_config:'Configure', fb_ignore:'Ignore',
+    st_title:'System status', m_server:'Server', m_players:'Players', m_channel:'Channel', ch_prox:'Proximity',
+    btn_start:'🎙️ Start proximity voice', btn_leave:'Disconnect',
+    st_off:'Offline', sub_off:'Palworld closed or voice off',
+    st_connecting:'Connecting…', sub_connecting:'establishing connection',
+    st_searching:'Looking for game', sub_searching:'connected — join a server',
+    st_on:'Connected', sub_on:'proximity voice active',
+    mute_on:'🎤 Mic', mute_off:'🔇 Mic muted', deaf_on:'🔊 Sound', deaf_off:'🔇 Deafened',
+    lang:'🌐 Idioma / Language', audio:'Audio', mic:'Microphone', vol_in:'Microphone volume (input)',
+    out:'Audio output', vol_out:'Output volume', refresh:'Refresh devices',
+    proc_title:'Microphone processing',
+    p_highpass:'High-pass', p_highpass_h:'(cuts rumble/hum)',
+    p_comp:'Compressor', p_comp_h:'(levels the voice)',
+    p_gate:'Noise gate', p_gate_h:'(cuts background noise)',
+    p_rnnoise:'AI noise suppression', p_rnnoise_h:'(RNNoise — kills keyboard/fan even while talking)',
+    p_sens:'Gate sensitivity',
+    p_meter_hint:'While talking, the bar passes the marker (white) → opens. In silence, stays below → cuts.',
+    p_monitor:'🎧 Hear my microphone', p_monitor_h:'(test — use headphones)',
+    srv_title:'Server', srv_autodetect:'Detect game server (automatic)',
+    srv_port:'Voice port', srv_passauto:'Password (auto)', ph_passauto:'empty = no password',
+    srv_manual:'Manual server (fallback)', srv_new:'+ New', srv_remove:'Remove',
+    srv_name:'Name', srv_addr:'Address', srv_pass:'Password', srv_range:'Voice range (meters)',
+    srv_autoconnect:'Connect automatically when entering the game', srv_save:'Save',
+    log_title:'System log', hud_expand:'Open window', hud_players:'players',
+    // system log (panel)
+    lg_rnnoise_ok:'RNNoise (AI) loaded', lg_rnnoise_fail:'RNNoise failed: {e}',
+    lg_game_detected:'game server detected: {ip}', lg_no_ip:"couldn't detect the IP — using saved server",
+    lg_left_server:'left the server — voice disconnected', lg_no_wails:'warning: outside Wails (no game position)',
+    lg_bitrate:'[net] bitrate -> {kbps}kbps (loss {loss}%, rtt {rtt}ms)',
+    lg_configure_server:'configure a server', lg_no_url:'server without URL',
+    lg_worklet_fail:'mic worklet failed: {e}', lg_hearing_peer:'hearing peer {id}',
+    lg_mic_ws_err:'native mic WS: error', lg_mic_ok:'native mic ok (WASAPI — no audio degradation)',
+    lg_no_mic:"no microphone ({err}) — you hear, but can't talk",
+    lg_error:'ERROR: {data}', lg_connected:'connected (id {id})', lg_ws_err:'websocket error',
+    lg_reconnecting:'connection dropped — reconnecting in {s}s…', lg_not_found:"failed — couldn't find the server",
+    lg_save_err:'failed to save: {err}', lg_ready:'ready — waiting to enter the game',
+    lg_add_server:'add a server in the config', lg_cfg_err:'failed to load config: {err}',
+  },
+};
+let lang = localStorage.getItem('ppv_lang') || ((navigator.language || '').toLowerCase().startsWith('pt') ? 'pt' : 'en');
+function t(k, p){ let s = (I18N[lang] && I18N[lang][k]) || I18N.en[k] || k; if (p) for (const n in p) s = s.split('{'+n+'}').join(p[n]); return s; }
+function applyI18n(){
+  document.documentElement.lang = lang;
+  document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = t(el.getAttribute('data-i18n')); });
+  document.querySelectorAll('[data-i18n-ph]').forEach(el => { el.setAttribute('placeholder', t(el.getAttribute('data-i18n-ph'))); });
+  document.querySelectorAll('[data-i18n-title]').forEach(el => { el.title = t(el.getAttribute('data-i18n-title')); });
+  try { refreshStatus(); } catch (_) {}
+  try { updateAudioBtns(); } catch (_) {}
+}
+function setLang(l){ lang = l; try { localStorage.setItem('ppv_lang', l); } catch (_) {} applyI18n(); }
 const RT = window.runtime || {}; // runtime do Wails (controle de janela)
 // log colorido com timestamp. level: 'ok' | 'warn' | 'err' | 'info'
 function log(m, level) {
@@ -118,10 +215,10 @@ function placePanner(p) {
 let connState = 'off'; // 'off' | 'connecting' | 'on'
 function refreshStatus() {
   let txt, cls, sub;
-  if (connState === 'off')             { txt='Offline';        cls='off';       sub='Palworld fechado ou voz desligada'; }
-  else if (connState === 'connecting') { txt='Conectando…';    cls='searching'; sub='estabelecendo conexão'; }
-  else if (!posFromGame)               { txt='Procurando jogo';cls='searching'; sub='conectado — entre num servidor'; }
-  else                                 { txt='Conectado';      cls='on';        sub='voz de proximidade ativa'; }
+  if (connState === 'off')             { txt=t('st_off');        cls='off';       sub=t('sub_off'); }
+  else if (connState === 'connecting') { txt=t('st_connecting'); cls='searching'; sub=t('sub_connecting'); }
+  else if (!posFromGame)               { txt=t('st_searching'); cls='searching'; sub=t('sub_searching'); }
+  else                                 { txt=t('st_on');        cls='on';        sub=t('sub_on'); }
   $('conn').textContent = txt;    $('conn').className = 'badge ' + cls;
   $('connTxt').textContent = txt; $('statusDot').className = 'sdot ' + cls;
   $('status').textContent = sub;
@@ -201,11 +298,11 @@ async function onGameEnter() {
     let ip = '';
     try { ip = await window.go.main.App.DetectGameServerIP(); } catch (_) {}
     if (ip) {
-      log('servidor do jogo detectado: ' + ip);
+      log(t('lg_game_detected', {ip}));
       start({ name: 'auto ' + ip, url: 'ws://' + ip + ':' + (cfg.autoPort || 8765), password: cfg.autoPassword || '', voiceRangeMeters: 50 });
       return;
     }
-    log('não detectei o IP — usando servidor salvo');
+    log(t('lg_no_ip'));
   }
   connectSelected();
 }
@@ -216,13 +313,13 @@ if (window.runtime && window.runtime.EventsOn) {
   window.runtime.EventsOn('posLost', () => {
     inGame = false; posFromGame = false; refreshStatus();
     wantConnected = false; wasEverConnected = false; clearTimeout(reconnectTimer); // saiu do jogo -> nao reconecta
-    if (ws) { log('saiu do servidor — voz desconectada'); stop(); }
+    if (ws) { log(t('lg_left_server')); stop(); }
     setOverlayMode(false);
     RT.WindowHide && RT.WindowHide(); // saiu do jogo -> some (sem aba na taskbar)
   });
   // reabrir o .exe traz a config de volta (single-instance no Go)
   window.runtime.EventsOn('showConfig', () => { RT.WindowShow && RT.WindowShow(); setCompact(false); });
-} else { log('aviso: fora do Wails (sem posição do jogo)'); }
+} else { log(t('lg_no_wails')); }
 
 // ----- WebSocket / WebRTC -----
 let ws = null, pc = null, posTimer = null, gotHello = false;
@@ -282,7 +379,7 @@ function startNetAdapt() {
     const target = BR_LEVELS[i];
     if (target !== curBitrate) {
       curBitrate = target; applyBitrate(target);
-      log(`[rede] bitrate -> ${target / 1000}kbps (perda ${(loss * 100).toFixed(0)}%, rtt ${(rtt * 1000) | 0}ms)`, 'info');
+      log(t('lg_bitrate', { kbps: target / 1000, loss: (loss * 100).toFixed(0), rtt: (rtt * 1000) | 0 }), 'info');
     }
   }, 3000);
 }
@@ -306,14 +403,14 @@ function selectedServer() { return cfg.servers[cfg.selected] || null; }
 
 function connectSelected() {
   const s = selectedServer();
-  if (!s || !s.url) { showSettings(); log('configure um servidor'); return; }
+  if (!s || !s.url) { showSettings(); log(t('lg_configure_server')); return; }
   start(s);
 }
 
 async function start(s) {
   if (ws) return;
   const url = wsURLFrom(s.url);
-  if (!url) { log('servidor sem URL'); return; } // senha vazia = passwordless (ok)
+  if (!url) { log(t('lg_no_url')); return; } // senha vazia = passwordless (ok)
   wantConnected = true; lastServer = s; // intencao de estar conectado (p/ reconectar em queda)
   hideFallback();
   gotHello = false;
@@ -325,7 +422,7 @@ async function start(s) {
     actx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
     listener = actx.listener;
     masterGain = actx.createGain(); masterGain.gain.value = deafened ? 0 : masterVolume; masterGain.connect(actx.destination);
-    try { await actx.audioWorklet.addModule('mic-feed.js'); } catch (e) { log('worklet do mic falhou: ' + e, 'err'); }
+    try { await actx.audioWorklet.addModule('mic-feed.js'); } catch (e) { log(t('lg_worklet_fail', {e}), 'err'); }
   }
   if (actx.state === 'suspended') { try { await actx.resume(); } catch (_) {} }
   // saida no device escolhido na config (vazio = device padrao do sistema)
@@ -353,7 +450,7 @@ async function start(s) {
     const a = new Audio(); a.muted = true; a.srcObject = e.streams[0]; // keep-alive do stream
     if (a.setSinkId) { a.setSinkId(cfg.outputDeviceId || 'default').catch(() => {}); }
     peers[id] = Object.assign(peers[id] || { x:0,y:0,z:0,yaw:0 }, { panner, pannerGain, directGain, lp, audio: a });
-    placePanner(peers[id]); updatePlayers(); log('ouvindo peer ' + id.slice(0,8), 'ok');
+    placePanner(peers[id]); updatePlayers(); log(t('lg_hearing_peer', { id: id.slice(0,8) }), 'ok');
   };
   pc.onicecandidate = e => { if (e.candidate) ws.send(JSON.stringify({ event: 'candidate', data: JSON.stringify(e.candidate) })); };
 
@@ -387,10 +484,10 @@ async function start(s) {
       micWs.onmessage = ev => { let f = new Float32Array(ev.data);
         if (proc.rnnoise && rnn && f.length === rnn.FRAME) f = rnn.process(f); // supressao IA
         micNode.port.postMessage(f, [f.buffer]); };
-      micWs.onerror = () => log('WS do mic nativo: erro', 'warn');
+      micWs.onerror = () => log(t('lg_mic_ws_err'), 'warn');
       populateDevices();
-      log('mic nativo ok (WASAPI — sem degradar o audio)', 'ok');
-    } catch (err) { log('sem microfone (' + err.name + ') — você ouve, mas não fala', 'err'); }
+      log(t('lg_mic_ok'), 'ok');
+    } catch (err) { log(t('lg_no_mic', { err: err.name }), 'err'); }
     setConn('on');
     posTimer = setInterval(() => {
       if (ws && ws.readyState === 1)
@@ -400,8 +497,8 @@ async function start(s) {
 
   ws.onmessage = async ev => {
     const m = JSON.parse(ev.data);
-    if (m.event === 'error')      { log('ERRO: ' + m.data, 'err'); wantConnected = false; return; } // senha errada etc -> nao reconecta
-    if (m.event === 'hello')      { gotHello = true; wasEverConnected = true; reconnectDelay = 2000; hideFallback(); log('conectado (id ' + m.data.slice(0,8) + ')'); return; }
+    if (m.event === 'error')      { log(t('lg_error', { data: m.data }), 'err'); wantConnected = false; return; } // senha errada etc -> nao reconecta
+    if (m.event === 'hello')      { gotHello = true; wasEverConnected = true; reconnectDelay = 2000; hideFallback(); log(t('lg_connected', { id: m.data.slice(0,8) })); return; }
     if (m.event === 'serverinfo') { // "no compose e o padrao": nome + alcance do servidor
       try { const si = JSON.parse(m.data); $('mServer').textContent = si.name || '—';
             const r = parseFloat(si.range); if (r) applyRange(r); } catch (_) {} return;
@@ -421,19 +518,19 @@ async function start(s) {
     }
   };
 
-  ws.onerror = () => { log('erro de websocket'); };
+  ws.onerror = () => { log(t('lg_ws_err')); };
   ws.onclose = () => {
     stop();
     if (wantConnected && wasEverConnected && lastServer) {
       // QUEDA DE REDE: reconecta sozinho com backoff. Nao dispara em saida manual,
       // sair do jogo (posLost) ou senha errada (esses zeram wantConnected).
-      log(`conexão caiu — reconectando em ${Math.round(reconnectDelay / 1000)}s…`, 'warn');
+      log(t('lg_reconnecting', { s: Math.round(reconnectDelay / 1000) }), 'warn');
       setConn('connecting');
       clearTimeout(reconnectTimer);
       reconnectTimer = setTimeout(() => { if (wantConnected) start(lastServer); }, reconnectDelay);
       reconnectDelay = Math.min(Math.round(reconnectDelay * 1.6), 15000);
     } else if (!wasEverConnected) {
-      const s2 = selectedServer(); showFallback(s2 ? s2.name : ''); log('falhou — não achei o servidor');
+      const s2 = selectedServer(); showFallback(s2 ? s2.name : ''); log(t('lg_not_found'));
     }
   };
 }
@@ -516,8 +613,8 @@ function applyVolume(v)   { masterVolume = v; applyOutput(); }
 function applyInputVol(v) { inputVol = v; applyInput(); }
 function updateAudioBtns() {
   const mm = $('muteMic'), df = $('deafen');
-  mm.textContent = micMuted ? '🔇 Mic mutado' : '🎤 Mic'; mm.classList.toggle('muted', micMuted);
-  df.textContent = deafened ? '🔇 Sem som' : '🔊 Som';   df.classList.toggle('muted', deafened);
+  mm.textContent = micMuted ? t('mute_off') : t('mute_on'); mm.classList.toggle('muted', micMuted);
+  df.textContent = deafened ? t('deaf_off') : t('deaf_on'); df.classList.toggle('muted', deafened);
 }
 function applyRange(m) { voiceRangeMeters = m; for (const id in peers) { const p = peers[id]; if (p.panner) p.panner.maxDistance = m; } }
 
@@ -601,7 +698,7 @@ $('cfgSave').addEventListener('click', async () => {
   gatherConfig(); applyVolume(cfg.volume); renderServerList();
   if (cfg.outputDeviceId && actx && actx.setSinkId) { try { await actx.setSinkId(cfg.outputDeviceId); } catch (_) {} }
   try { await window.go.main.App.SaveConfig(cfg); $('cfgSaved').textContent = 'salvo ✓'; setTimeout(() => $('cfgSaved').textContent = '', 2000); }
-  catch (err) { log('erro ao salvar: ' + err); }
+  catch (err) { log(t('lg_save_err', {err})); }
 });
 
 $('fbConfig').addEventListener('click', () => { hideFallback(); showSettings(); });
@@ -616,6 +713,8 @@ $('leave').onclick = () => { wantConnected = false; clearTimeout(reconnectTimer)
   try {
     cfg = await window.go.main.App.GetConfig();
     if (!cfg.servers) cfg.servers = [];
+    $('cfgLang').value = lang; $('cfgLang').onchange = e => setLang(e.target.value);
+    applyI18n(); // traduz a UI pro idioma salvo/do sistema
     masterVolume = (cfg.volume == null) ? 1.0 : cfg.volume;
     $('cfgVolume').value = masterVolume; $('cfgVolumeVal').textContent = Math.round(masterVolume*100)+'%';
     inputVol = (cfg.inputVolume == null) ? 1.0 : cfg.inputVolume;
@@ -629,10 +728,10 @@ $('leave').onclick = () => { wantConnected = false; clearTimeout(reconnectTimer)
     await populateDevices();
     const s = selectedServer();
     if (s) applyRange(s.voiceRangeMeters || 50);
-    log('pronto — esperando entrar no jogo');
+    log(t('lg_ready'));
     applyOverlayStyle(); // tira a aba da taskbar ja na abertura
-    if (!cfg.autoDetect && (!s || !s.url || !s.password)) { showSettings(); log('adicione um servidor na config'); }
+    if (!cfg.autoDetect && (!s || !s.url || !s.password)) { showSettings(); log(t('lg_add_server')); }
   } catch (err) {
-    log('erro ao carregar config: ' + err); showSettings();
+    log(t('lg_cfg_err', {err})); showSettings();
   }
 })();

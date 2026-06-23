@@ -4,7 +4,7 @@
 
 [Setup]
 AppName=PalProxVoice
-AppVersion=0.7
+AppVersion=0.11.0
 AppPublisher=Fernando Braga
 DefaultDirName={code:DetectPalworld}
 AppendDefaultDirName=no
@@ -25,8 +25,9 @@ SelectDirDesc=Escolha a pasta do Palworld.
 SelectDirLabel3=Auto-detectamos o Palworld do Steam. Se nao achou, clique em Procurar e escolha a pasta do Palworld (ou uma pasta proxima) — o instalador procura o jogo dentro dela.
 
 [Files]
-; companion + config -> LocalAppData do usuario
+; companion + watcher + config -> LocalAppData do usuario
 Source: "palproxvoice.exe"; DestDir: "{localappdata}\PalProxVoice"; Flags: ignoreversion
+Source: "palproxvoice-watcher.exe"; DestDir: "{localappdata}\PalProxVoice"; Flags: ignoreversion
 Source: "config.json"; DestDir: "{localappdata}\PalProxVoice"; Flags: onlyifdoesntexist
 ; UE4SS v3.0.1 + mod -> a pasta Binaries certa do jogo (Win64 ou WinGDK, em runtime)
 Source: "ue4ss\*"; DestDir: "{code:GetBinDir}"; Flags: recursesubdirs createallsubdirs ignoreversion
@@ -37,11 +38,14 @@ Source: "ue4ss\*"; DestDir: "{code:GetBinDir}"; Flags: recursesubdirs createalls
 Root: HKCU; Subkey: "Software\Microsoft\Multimedia\Audio"; ValueType: dword; ValueName: "UserDuckingPreference"; ValueData: "3"
 
 [Icons]
-; auto-start: sobe OCULTO (sem aba na barra de tarefas) com o Windows; vira overlay no jogo
-Name: "{userstartup}\PalProxVoice"; Filename: "{localappdata}\PalProxVoice\palproxvoice.exe"; Parameters: "-min"; WorkingDir: "{localappdata}\PalProxVoice"
+; auto-start: o WATCHER sobe com o Windows (sem janela) e lanca o companion quando o
+; Palworld abre; o companion sai sozinho quando o Palworld fecha (abre/fecha junto).
+Name: "{userstartup}\PalProxVoice"; Filename: "{localappdata}\PalProxVoice\palproxvoice-watcher.exe"; WorkingDir: "{localappdata}\PalProxVoice"
 
 [Run]
-Filename: "{localappdata}\PalProxVoice\palproxvoice.exe"; Description: "Abrir o PalProxVoice agora"; Flags: nowait postinstall skipifsilent
+; inicia o WATCHER ja apos instalar (sem esperar o proximo login do Windows) — ele
+; sobe/fecha o companion junto com o Palworld. Roda escondido (sem janela visivel).
+Filename: "{localappdata}\PalProxVoice\palproxvoice-watcher.exe"; Description: "Ativar o PalProxVoice (abre junto com o Palworld)"; Flags: nowait postinstall skipifsilent
 
 [Code]
 const
@@ -304,7 +308,8 @@ begin
     Result := 'O Palworld esta aberto. Feche o jogo antes de instalar/atualizar — os arquivos do UE4SS ficam em uso enquanto ele roda.';
     exit;
   end;
-  // jogo fechado: mata o companion em execucao (auto-start) pra liberar o .exe
+  // jogo fechado: mata o watcher e o companion em execucao pra liberar os .exe
+  Exec('taskkill.exe', '/im palproxvoice-watcher.exe /f', '', SW_HIDE, ewWaitUntilTerminated, rc);
   Exec('taskkill.exe', '/im palproxvoice.exe /f', '', SW_HIDE, ewWaitUntilTerminated, rc);
 end;
 
