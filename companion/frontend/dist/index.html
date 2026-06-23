@@ -107,6 +107,13 @@
   input[type=range]{flex:1;accent-color:var(--accent)}
   .save-row{display:flex;align-items:center;justify-content:flex-end;gap:12px;margin-top:4px}
 
+  /* medidor de nivel do mic (estilo Discord) */
+  .meter{position:relative;height:10px;background:var(--card2);border:1px solid var(--line2);
+         border-radius:6px;overflow:hidden;margin:2px 0 6px}
+  .meter-fill{height:100%;width:0%;background:linear-gradient(90deg,var(--good),var(--warn) 70%,var(--bad));
+              transition:width .04s linear}
+  .meter-thr{position:absolute;top:-2px;bottom:-2px;width:2px;background:#fff;left:50%;box-shadow:0 0 5px #000}
+
   /* alert */
   #fallback{background:rgba(240,111,111,.08);border:1px solid rgba(240,111,111,.4);border-radius:var(--radius);
         padding:13px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:13.5px;flex-wrap:wrap}
@@ -177,6 +184,20 @@
         <label class="field">Saída de áudio <select id="cfgOutput"></select></label>
         <label class="field">Volume de saída <div class="rowline"><input id="cfgVolume" type="range" min="0" max="2" step="0.05" value="1"><span id="cfgVolumeVal" class="dim">100%</span></div></label>
         <div class="rowline"><button id="cfgRefreshDevices" class="mini">Atualizar dispositivos</button><span id="cfgDevHint" class="dim"></span></div>
+      </div>
+
+      <div class="card">
+        <div class="card-h">Processamento do microfone</div>
+        <label class="switch"><input id="pHighpass" type="checkbox" checked> Passa-alta <span class="dim">(corta zumbido/hum)</span></label>
+        <label class="switch"><input id="pComp" type="checkbox" checked> Compressor <span class="dim">(nivela a voz)</span></label>
+        <label class="switch"><input id="pGate" type="checkbox" checked> Noise gate <span class="dim">(corta ruído de fundo)</span></label>
+        <label class="switch"><input id="pRnnoise" type="checkbox"> Supressão de ruído IA <span class="dim">(RNNoise — mata teclado/ventilador até falando)</span></label>
+        <label class="field">Sensibilidade do gate
+          <div class="rowline"><input id="pSens" type="range" min="0" max="100" step="1" value="50"><span id="pSensVal" class="dim">50</span></div>
+        </label>
+        <div class="meter"><div id="meterFill" class="meter-fill"></div><div id="meterThr" class="meter-thr"></div></div>
+        <div class="dim" style="margin:-2px 0 12px">Falando, a barra passa do marcador (branco) → abre. Em silêncio, fica abaixo → corta.</div>
+        <label class="switch"><input id="pMonitor" type="checkbox"> 🎧 Ouvir meu microfone <span class="dim">(teste — use fone)</span></label>
       </div>
 
       <div class="card">
