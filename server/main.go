@@ -42,12 +42,21 @@ type peerState struct {
 	id   string
 	conn *threadSafeWriter
 	pc   *webrtc.PeerConnection
+
+	// anti-spoof (V1.5): identidade + estado de reconciliacao com a REST
+	ip       string  // IP publico do cliente (respeita X-Forwarded-For)
+	userID   string  // userId do Palworld, se o cliente mandou (cobre mesmo-IP)
+	lastX    float64 // ultima posicao considerada valida
+	lastY    float64
+	hasLast  bool
+	divergeN int // polls seguidos divergindo da REST (verify)
 }
 
 type wsMsg struct {
 	Event string `json:"event"`
 	Data  string `json:"data"`
 	ID    string `json:"id,omitempty"`
+	User  string `json:"user,omitempty"` // userId do Palworld no auth (anti-spoof)
 }
 
 // ---------- main ----------
@@ -66,6 +75,8 @@ func main() {
 		se.SetNAT1To1IPs([]string{publicIP}, webrtc.ICECandidateTypeHost)
 	}
 	api = webrtc.NewAPI(webrtc.WithSettingEngine(se))
+
+	initAntispoof() // V1.5: liga o poll da REST se PPV_AUTH_MODE=verify|strict
 
 	http.Handle("/", http.FileServer(http.Dir("./web"))) // serve o cliente de teste
 	http.HandleFunc("/ws", websocketHandler)
@@ -113,6 +124,14 @@ func websocketHandler(w http.ResponseWriter, r *http.Request) {
 	// password vazio no server = sem senha (modo publico / auto-descoberta)
 	if first.Event != "auth" || (password != "" && first.Data != password) {
 		_ = conn.WriteJSON(&wsMsg{Event: "error", Data: "auth failed"})
+		return
+	}
+
+	// anti-spoof: identidade do peer (IP publico + userId opcional do Palworld)
+	peerIP := clientIP(r)
+	peerUser := first.User
+	if isBlocked(peerUser, peerIP) { // politica B: bloqueado no nivel da voz
+		_ = conn.WriteJSON(&wsMsg{Event: "error", Data: "blocked"})
 		return
 	}
 
@@ -168,8 +187,9 @@ func websocketHandler(w http.ResponseWriter, r *http.Request) {
 	})
 
 	// registra o peer e renegocia
+	self := &peerState{id: id, conn: conn, pc: pc, ip: peerIP, userID: peerUser}
 	listLock.Lock()
-	peers = append(peers, &peerState{id: id, conn: conn, pc: pc})
+	peers = append(peers, self)
 	listLock.Unlock()
 	signalPeerConnections()
 	defer removePeer(id)
@@ -202,7 +222,13 @@ func websocketHandler(w http.ResponseWriter, r *http.Request) {
 				_ = pc.SetRemoteDescription(ans)
 			}
 		case "pos":
-			broadcastPos(id, m.Data) // "x,y,z,yaw" do mod M1
+			// anti-spoof: reconcilia com a REST (off=passa direto). out = o que
+			// vai pros outros; drop=true (politica B) -> derruba este peer.
+			out, drop := resolveOutgoingPos(self, m.Data)
+			broadcastPos(id, out) // "x,y,z,yaw" (do cliente, da REST, ou ultima valida)
+			if drop {
+				return
+			}
 		}
 	}
 }

@@ -17,3 +17,29 @@ services:
       # "padrao no compose": o servidor manda nome+alcance pro companion ao conectar
       SERVER_NAME: "${SERVER_NAME:-PalProxVoice}"
       VOICE_RANGE: "${VOICE_RANGE:-50}"
+
+      # ---- anti-spoof (V1.5) — DESLIGADO por padrao ----
+      # off    = confia na posicao do cliente (legado).
+      # verify = reconcilia com a REST; spoof sustentado -> ignora a mentira (politica A).
+      # strict = posicao sempre da REST.
+      # verify/strict precisam ALCANCAR a REST do Palworld POR DENTRO da rede docker
+      # (a REST e' API de ADMIN -> NUNCA exponha publica). Veja a nota de rede abaixo.
+      PPV_AUTH_MODE: "${PPV_AUTH_MODE:-off}"
+      PPV_REST_URL: "${PPV_REST_URL:-}"        # ex.: http://palworld-server:8212
+      PPV_REST_USER: "${PPV_REST_USER:-admin}"
+      PPV_REST_PASS: "${PPV_REST_PASS:-}"      # = ADMIN_PASSWORD do servidor Palworld
+      PPV_POS_TOL_CM: "${PPV_POS_TOL_CM:-5000}"   # tolerancia de divergencia (cm)
+      PPV_DIVERGE_POLLS: "${PPV_DIVERGE_POLLS:-4}" # polls seguidos divergindo p/ agir
+      PPV_BAN: "${PPV_BAN:-0}"                  # 1 = politica B (bloqueia no nivel da voz)
+
+# NOTA DE REDE (verify/strict): o container de voz precisa resolver "palworld-server"
+# (ou o nome do service do Palworld) na MESMA rede docker. Se o Palworld roda em outro
+# compose/projeto Dokploy, crie uma rede externa e ligue os dois nela. Ex.:
+#   docker network create ourworld
+#   # nos DOIS compose: adicione
+#   #   networks: [ourworld]
+#   # e no fim do arquivo:
+#   # networks:
+#   #   ourworld:
+#   #     external: true
+# Assim o voice fala http://palworld-server:8212 SEM expor a REST pra internet.
