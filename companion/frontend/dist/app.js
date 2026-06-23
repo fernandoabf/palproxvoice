@@ -215,6 +215,7 @@ if (window.runtime && window.runtime.EventsOn) {
   window.runtime.EventsOn('gameEnter', () => { RT.WindowShow && RT.WindowShow(); setCompact(true); });
   window.runtime.EventsOn('posLost', () => {
     inGame = false; posFromGame = false; refreshStatus();
+    wantConnected = false; wasEverConnected = false; clearTimeout(reconnectTimer); // saiu do jogo -> nao reconecta
     if (ws) { log('saiu do servidor — voz desconectada'); stop(); }
     setOverlayMode(false);
     RT.WindowHide && RT.WindowHide(); // saiu do jogo -> some (sem aba na taskbar)
@@ -225,6 +226,8 @@ if (window.runtime && window.runtime.EventsOn) {
 
 // ----- WebSocket / WebRTC -----
 let ws = null, pc = null, posTimer = null, gotHello = false;
+// reconexao automatica em QUEDA DE REDE (internet ruim/instavel)
+let wantConnected = false, wasEverConnected = false, lastServer = null, reconnectTimer = null, reconnectDelay = 2000;
 
 // qualidade de audio: liga FEC (corrige perda de pacote), forca mono e bitrate alvo
 function tuneOpus(sdp) {
@@ -311,6 +314,7 @@ async function start(s) {
   if (ws) return;
   const url = wsURLFrom(s.url);
   if (!url) { log('servidor sem URL'); return; } // senha vazia = passwordless (ok)
+  wantConnected = true; lastServer = s; // intencao de estar conectado (p/ reconectar em queda)
   hideFallback();
   gotHello = false;
   voiceRangeMeters = s.voiceRangeMeters || 50;
@@ -396,8 +400,8 @@ async function start(s) {
 
   ws.onmessage = async ev => {
     const m = JSON.parse(ev.data);
-    if (m.event === 'error')      { log('ERRO: ' + m.data, 'err'); return; }
-    if (m.event === 'hello')      { gotHello = true; hideFallback(); log('conectado (id ' + m.data.slice(0,8) + ')'); return; }
+    if (m.event === 'error')      { log('ERRO: ' + m.data, 'err'); wantConnected = false; return; } // senha errada etc -> nao reconecta
+    if (m.event === 'hello')      { gotHello = true; wasEverConnected = true; reconnectDelay = 2000; hideFallback(); log('conectado (id ' + m.data.slice(0,8) + ')'); return; }
     if (m.event === 'serverinfo') { // "no compose e o padrao": nome + alcance do servidor
       try { const si = JSON.parse(m.data); $('mServer').textContent = si.name || '—';
             const r = parseFloat(si.range); if (r) applyRange(r); } catch (_) {} return;
@@ -419,9 +423,18 @@ async function start(s) {
 
   ws.onerror = () => { log('erro de websocket'); };
   ws.onclose = () => {
-    const failed = !gotHello;
     stop();
-    if (failed) { const s2 = selectedServer(); showFallback(s2 ? s2.name : ''); log('falhou — não achei o servidor'); }
+    if (wantConnected && wasEverConnected && lastServer) {
+      // QUEDA DE REDE: reconecta sozinho com backoff. Nao dispara em saida manual,
+      // sair do jogo (posLost) ou senha errada (esses zeram wantConnected).
+      log(`conexão caiu — reconectando em ${Math.round(reconnectDelay / 1000)}s…`, 'warn');
+      setConn('connecting');
+      clearTimeout(reconnectTimer);
+      reconnectTimer = setTimeout(() => { if (wantConnected) start(lastServer); }, reconnectDelay);
+      reconnectDelay = Math.min(Math.round(reconnectDelay * 1.6), 15000);
+    } else if (!wasEverConnected) {
+      const s2 = selectedServer(); showFallback(s2 ? s2.name : ''); log('falhou — não achei o servidor');
+    }
   };
 }
 
@@ -596,7 +609,7 @@ $('fbIgnore').addEventListener('click', hideFallback);
 
 // botoes manuais: Conectar (servidor selecionado) / Desconectar
 $('go').onclick = () => { hideFallback(); connectSelected(); };
-$('leave').onclick = stop;
+$('leave').onclick = () => { wantConnected = false; clearTimeout(reconnectTimer); stop(); }; // Sair manual -> nao reconecta
 
 // ----- boot -----
 (async () => {
