@@ -1,286 +1,638 @@
-// PalProxVoice Companion — frontend vanilla (Wails v2)
-// Reaproveita toda a logica de audio/WebRTC/espacializacao do server/web/index.html.
-// Diferencas: posicao vem do evento Wails "pos" (nao mais do fetch da bridge),
-// config vem de window.go.main.App.GetConfig/SaveConfig, e ha um GainNode master.
+// PalProxVoice Companion — frontend (Wails v2)
+// Padrao: auto-conecta no servidor selecionado ao entrar no jogo, config escondida.
+// Se falhar -> mostra fallback (Configurar/Ignorar). Multi-servidor fica na config.
 
-// ----- world: posicao em CENTIMETROS (mesmo formato do mod M1: x,y,z,yaw) -----
-const me = { x: 0, y: 0, z: 0, yaw: 0 };  // yaw em graus
-const CM = 100;          // cm -> m na hora de espacializar
-const peers = {};        // id -> { x,y,z,yaw, panner, audio }
-let posFromGame = false; // true quando ja recebemos ao menos uma posicao do jogo
+const me = { x: 0, y: 0, z: 0, yaw: 0 };
+const CM = 100;
+const peers = {};
+let posFromGame = false;
+let inGame = false;
 
-// runtime config (defaults; sobrescritos por GetConfig no load)
-let voiceRangeMeters = 50;   // vira maxDistance do PannerNode (ja em metros)
-let masterVolume = 1.0;      // vira o ganho do GainNode master
+let voiceRangeMeters = 50;
+let masterVolume = 1.0;      // volume de saida
+let inputVol = 1.0;          // volume do microfone (entrada)
+let micMuted = false, deafened = false, micGain = null, micStream = null, micWs = null;
+let micProc = null, meterRAF = 0, rnn = null;
+// processamento do mic (persistido em localStorage; monitor sempre off no inicio)
+const proc = (() => { let p = { highpass:true, comp:true, gate:true, sens:50, rnnoise:false };
+  try { p = Object.assign(p, JSON.parse(localStorage.getItem('ppv_proc') || '{}')); } catch (_) {}
+  p.monitor = false; return p; })();
+function saveProc(){ try { localStorage.setItem('ppv_proc',
+  JSON.stringify({ highpass:proc.highpass, comp:proc.comp, gate:proc.gate, sens:proc.sens, rnnoise:proc.rnnoise })); } catch (_) {} }
 
-const logEl = document.getElementById('log');
-const log = m => { logEl.textContent += m + "\n"; logEl.scrollTop = logEl.scrollHeight; };
+// RNNoise (IA, Xiph BSD): supressao de ruido neural. Processa frames de 480 @48k —
+// exatamente o que o Go envia. Roda na MAIN THREAD ao receber cada frame do WS,
+// antes do worklet. Mata teclado/ventilador ATE enquanto voce fala (o gate so corta
+// no silencio). WASM embutido (rnnoise-sync.js), 100% local.
+async function initRNNoise() {
+  if (rnn) return rnn;
+  try {
+    const factory = (await import('./rnnoise-sync.js')).default;
+    const M = await factory();
+    const FRAME = 480, ctx = M._rnnoise_create(0), ptr = M._malloc(FRAME * 4);
+    rnn = { M, ctx, ptr, FRAME, process(frame) {
+      const heap = M.HEAPF32, base = ptr >> 2;
+      for (let i = 0; i < FRAME; i++) heap[base + i] = frame[i] * 32768; // RNNoise quer faixa int16
+      M._rnnoise_process_frame(ctx, ptr, ptr);
+      const out = new Float32Array(FRAME);
+      for (let i = 0; i < FRAME; i++) out[i] = heap[base + i] / 32768;
+      return out;
+    } };
+    log('RNNoise (IA) carregado', 'ok');
+  } catch (e) { log('RNNoise falhou: ' + e, 'err'); rnn = null; }
+  return rnn;
+}
+// sensibilidade 0..100 -> limiar linear do gate (sens alto = mais sensivel = limiar menor)
+function sensToThreshold(s){ return Math.pow(10, (-25 - (s/100)*35) / 20); }
 
-// yaw(graus) -> vetor "pra frente" no plano X-Z do Web Audio.
+// config completa (lista de servidores + global)
+let cfg = { servers: [], selected: 0, volume: 1.0, micDeviceId: '', outputDeviceId: '', autoConnect: true };
+
+const $ = id => document.getElementById(id);
+const RT = window.runtime || {}; // runtime do Wails (controle de janela)
+// log colorido com timestamp. level: 'ok' | 'warn' | 'err' | 'info'
+function log(m, level) {
+  const col = { ok:'var(--good)', warn:'var(--warn)', err:'var(--bad)', info:'var(--info)' };
+  const e = $('log'); const d = new Date();
+  const ts = ('0'+d.getHours()).slice(-2) + ':' + ('0'+d.getMinutes()).slice(-2);
+  const row = document.createElement('div'); row.className = 'l';
+  const tEl = document.createElement('span'); tEl.className = 't'; tEl.textContent = ts;
+  const mEl = document.createElement('span'); mEl.textContent = m;
+  if (col[level]) mEl.style.color = col[level];
+  row.append(tEl, mEl); e.appendChild(row); e.scrollTop = e.scrollHeight;
+}
+
 const fwd = yaw => { const r = yaw * Math.PI / 180; return [Math.cos(r), 0, Math.sin(r)]; };
-(() => { const [fx,,fz] = fwd(0); console.assert(Math.abs(fx-1)<1e-9 && Math.abs(fz)<1e-9, "fwd(0) deve ser +X"); })();
+(() => { const [fx,,fz] = fwd(0); console.assert(Math.abs(fx-1)<1e-9 && Math.abs(fz)<1e-9, "fwd(0) +X"); })();
 
 let actx, listener, masterGain;
-function audioPos(p) { return [p.x/CM, p.z/CM, p.y/CM]; }  // game(x,y,z) -> audio(x=X, y=altura=Z, z=Y)
-
+function audioPos(p) { return [p.x/CM, p.z/CM, p.y/CM]; }
+// SUAVIZACAO: posicao/orientacao chegam a ~10-20Hz; aplicar direto (.value=) faz o
+// pan "pular" (HRTF e sensivel). setTargetAtTime faz a engine interpolar em taxa de
+// audio (sem ziper, sem clique). TC=~60ms -> soa imediato mas glide suave entre updates.
+const SMOOTH = 0.06;
+function ramp(param, v) { if (!param) return; try { param.setTargetAtTime(v, actx.currentTime, SMOOTH); } catch (_) { param.value = v; } }
+// Abordagem A PROVA DE EIXO: o LISTENER fica fixo na origem olhando -Z (frente),
+// up +Y — o frame canonico do Web Audio (right = +X). Cada peer e' posicionado pela
+// DIRECAO RELATIVA (bearing) calculada no plano do jogo a partir da MINHA posicao+yaw.
+// Assim nao dependemos do mapeamento de eixos UE<->WebAudio (que causava o espelhamento):
+// computamos o angulo e jogamos no frame conhecido. Sobra 1 sinal por eixo p/ acertar.
+const AUDIO_FLIP_LR = 1;   // se esquerda/direita vier trocada -> troca p/ -1
+const AUDIO_FLIP_FB = 1;   // se frente/tras vier trocada -> troca p/ -1
+const NEAR_FULL = 1.5;     // ate aqui = 100% direto/centralizado (presente, "colado")
+const NEAR_BLEND = 4;      // daqui pra frente = 100% HRTF (direcional)
 function placeListener() {
   if (!listener) return;
-  const [ax, ay, az] = audioPos(me);
-  const [fx, fy, fz] = fwd(me.yaw);
   if (listener.positionX) {
-    listener.positionX.value = ax; listener.positionY.value = ay; listener.positionZ.value = az;
-    listener.forwardX.value = fx; listener.forwardY.value = fy; listener.forwardZ.value = fz;
+    listener.positionX.value = 0; listener.positionY.value = 0; listener.positionZ.value = 0;
+    listener.forwardX.value = 0; listener.forwardY.value = 0; listener.forwardZ.value = -1;
     listener.upX.value = 0; listener.upY.value = 1; listener.upZ.value = 0;
-  } else { // API antiga
-    listener.setPosition(ax, ay, az);
-    listener.setOrientation(fx, fy, fz, 0, 1, 0);
-  }
+  } else { listener.setPosition(0, 0, 0); listener.setOrientation(0, 0, -1, 0, 1, 0); }
+  for (const id in peers) placePanner(peers[id]); // re-coloca todos relativo a mim
 }
 function placePanner(p) {
   if (!p.panner) return;
-  const [ax, ay, az] = audioPos(p);
-  if (p.panner.positionX) { p.panner.positionX.value = ax; p.panner.positionY.value = ay; p.panner.positionZ.value = az; }
-  else p.panner.setPosition(ax, ay, az);
+  const dx = p.x - me.x, dy = p.y - me.y;
+  const hd = Math.hypot(dx, dy) / CM;                         // distancia horizontal (m)
+  const beta = Math.atan2(dy, dx) - me.yaw * Math.PI / 180;   // bearing relativo ao MEU yaw (0 = frente)
+  const x = AUDIO_FLIP_LR * Math.sin(beta) * hd;              // +X = direita
+  const z = AUDIO_FLIP_FB * -Math.cos(beta) * hd;             // -Z = frente
+  const y = (p.z - me.z) / CM;                                // altura (cue fraco)
+  if (p.panner.positionX) { ramp(p.panner.positionX, x); ramp(p.panner.positionY, y); ramp(p.panner.positionZ, z); }
+  else p.panner.setPosition(x, y, z);
+  // crossfade: perto = direto/centralizado (presente), longe = HRTF (direcional)
+  if (p.directGain && p.pannerGain) {
+    const near = Math.max(0, Math.min(1, (NEAR_BLEND - hd) / (NEAR_BLEND - NEAR_FULL)));
+    // cutoff de proximidade: fade ate o SILENCIO ao chegar no alcance de voz (o modelo
+    // inverse nunca zera sozinho -> senao da pra ouvir gente longe demais).
+    const r = voiceRangeMeters, fs = r * 0.8;
+    const range = hd <= fs ? 1 : Math.max(0, 1 - (hd - fs) / Math.max(1, r - fs));
+    ramp(p.directGain.gain, near * range);
+    ramp(p.pannerGain.gain, (1 - near) * range);
+  }
+  // frente/tras: atras (+Z no frame canonico) = abafado; frente = aberto.
+  if (p.lp) ramp(p.lp.frequency, z > 0 ? 2800 : 18000);
 }
 
-// ----- desenho (top-down) so pra enxergar quem ta onde -----
-const cv = document.getElementById('stage'), ctx = cv.getContext('2d');
-function draw() {
-  ctx.clearRect(0, 0, cv.width, cv.height);
-  const cx = cv.width/2, cy = cv.height/2, S = 0.03; // px/cm; vista centrada em VOCE
-  const dot = (p, color, label) => {
-    const X = cx + (p.x - me.x)*S, Y = cy + (p.y - me.y)*S; // relativo a voce
-    ctx.fillStyle = color; ctx.beginPath(); ctx.arc(X, Y, 7, 0, 7); ctx.fill();
-    const [fx,,fz] = fwd(p.yaw);
-    ctx.strokeStyle = color; ctx.beginPath(); ctx.moveTo(X, Y); ctx.lineTo(X+fx*16, Y+fz*16); ctx.stroke();
-    ctx.fillStyle = '#cdd6e0'; ctx.font = '11px monospace'; ctx.fillText(label, X+10, Y-8);
-  };
-  for (const id in peers) if (peers[id].panner) dot(peers[id], '#e06363', id.slice(0,4));
-  dot(me, '#5aa9e6', 'voce');
-  document.getElementById('status').textContent =
-    `voce: ${me.x.toFixed(0)}, ${me.y.toFixed(0)}, ${me.z.toFixed(0)}  yaw ${me.yaw.toFixed(0)}` +
-    (posFromGame ? '   [posicao: JOGO]' : '   [posicao: aguardando jogo]');
-  requestAnimationFrame(draw);
+// ----- status (badge + card + dot + metricas) -----
+let connState = 'off'; // 'off' | 'connecting' | 'on'
+function refreshStatus() {
+  let txt, cls, sub;
+  if (connState === 'off')             { txt='Offline';        cls='off';       sub='Palworld fechado ou voz desligada'; }
+  else if (connState === 'connecting') { txt='Conectando…';    cls='searching'; sub='estabelecendo conexão'; }
+  else if (!posFromGame)               { txt='Procurando jogo';cls='searching'; sub='conectado — entre num servidor'; }
+  else                                 { txt='Conectado';      cls='on';        sub='voz de proximidade ativa'; }
+  $('conn').textContent = txt;    $('conn').className = 'badge ' + cls;
+  $('connTxt').textContent = txt; $('statusDot').className = 'sdot ' + cls;
+  $('status').textContent = sub;
+  $('go').hidden = (connState !== 'off');
+  $('leave').hidden = (connState === 'off');
+  $('connMeta').hidden = (connState !== 'on');
+  $('audioCtl').hidden = (connState !== 'on');
+  if ($('hudDot')) { $('hudDot').className = 'sdot ' + cls; $('hudTxt').textContent = txt; }
 }
-requestAnimationFrame(draw);
+function updatePlayers() {
+  const n = Object.values(peers).filter(p => p.panner).length;
+  $('mPlayers').textContent = n;
+  if ($('hudPlayers')) $('hudPlayers').textContent = n;
+}
+refreshStatus();
 
-// ----- posicao real do jogo via evento Wails "pos" (substitui o fetch da bridge) -----
+// ----- overlay compacto (janela frameless) -----
+// pequeno = HUD "Conectado · N players" no topo; cheio = dashboard/config.
+let compact = false;
+function setOverlayMode(on)  { try { window.go.main.App.SetOverlayMode(on); } catch (_) {} }
+function applyOverlayStyle() { try { window.go.main.App.ApplyOverlayStyle(); } catch (_) {} }
+async function positionTopRight(w) {
+  try {
+    if (!RT.ScreenGetAll) return;
+    const ss = await RT.ScreenGetAll();
+    const s = ss.find(x => x.isCurrent || x.IsCurrent) || ss.find(x => x.isPrimary || x.IsPrimary) || ss[0];
+    if (!s) return;
+    const sw = s.width || s.Width || (s.size && s.size.width) || (s.Size && s.Size.Width) || 0;
+    if (sw > 0 && RT.WindowSetPosition) RT.WindowSetPosition(sw - w - 24, 28);
+  } catch (_) {}
+}
+async function setCompact(on) {
+  compact = on;
+  setOverlayMode(on); // liga/desliga o watchdog (anti "mostrar area de trabalho")
+  const wb = document.querySelector('.winbar'), sc = document.querySelector('.scroll');
+  if (wb) wb.hidden = on;
+  if (sc) sc.hidden = on;
+  if ($('hud')) $('hud').hidden = !on;
+  if (!RT.WindowSetSize) return;
+  if (on) {
+    RT.WindowSetSize(230, 46);
+    RT.WindowSetAlwaysOnTop && RT.WindowSetAlwaysOnTop(true);
+    await positionTopRight(230);
+  } else {
+    RT.WindowSetAlwaysOnTop && RT.WindowSetAlwaysOnTop(false);
+    RT.WindowSetSize(960, 700);
+    RT.WindowCenter && RT.WindowCenter();
+  }
+  applyOverlayStyle(); // garante "sem aba na taskbar" depois de mostrar/redimensionar
+}
+if ($('tbCompact')) $('tbCompact').onclick = () => setCompact(true);  // Diminuir -> HUD
+if ($('tbClose'))   $('tbClose').onclick   = () => RT.Quit && RT.Quit(); // Fechar
+if ($('hudExpand')) $('hudExpand').onclick = () => setCompact(false);
+
+// ----- eventos do backend: "pos" e "posLost" -----
 function onPos(data) {
   if (!data) return;
-  const t = String(data).trim();
-  if (!t) return;
+  const t = String(data).trim(); if (!t) return;
   const [x, y, z, yaw] = t.split(',').map(Number);
   if ([x, y, z, yaw].some(Number.isNaN)) return;
   me.x = x; me.y = y; me.z = z; me.yaw = yaw;
-  posFromGame = true;
-  placeListener();
+  posFromGame = true; placeListener();
+  if (!inGame) {
+    inGame = true; refreshStatus();
+    RT.WindowShow && RT.WindowShow(); // aparece com o jogo, como overlay
+    setCompact(true);
+    if (cfg.autoConnect) onGameEnter();
+  }
+}
+
+// ao entrar no jogo: auto-detecta o IP do servidor atual; senao, servidor salvo.
+// DetectGameServerIP tenta live (mod) -> save (PalOptionSaveGame, pega Direct
+// Connect E lista do Steam) -> ini (so Direct Connect). Antes era so o ini.
+async function onGameEnter() {
+  if (ws) return; // ja conectado -> nao abre uma 2a conexao
+  if (cfg.autoDetect) {
+    let ip = '';
+    try { ip = await window.go.main.App.DetectGameServerIP(); } catch (_) {}
+    if (ip) {
+      log('servidor do jogo detectado: ' + ip);
+      start({ name: 'auto ' + ip, url: 'ws://' + ip + ':' + (cfg.autoPort || 8765), password: cfg.autoPassword || '', voiceRangeMeters: 50 });
+      return;
+    }
+    log('não detectei o IP — usando servidor salvo');
+  }
+  connectSelected();
 }
 if (window.runtime && window.runtime.EventsOn) {
   window.runtime.EventsOn('pos', onPos);
-} else {
-  log('aviso: window.runtime indisponivel (rodando fora do Wails?)');
-}
+  // (re)entrou num mundo -> HUD pequeno de volta, mesmo se tinha minimizado
+  window.runtime.EventsOn('gameEnter', () => { RT.WindowShow && RT.WindowShow(); setCompact(true); });
+  window.runtime.EventsOn('posLost', () => {
+    inGame = false; posFromGame = false; refreshStatus();
+    wantConnected = false; wasEverConnected = false; clearTimeout(reconnectTimer); // saiu do jogo -> nao reconecta
+    if (ws) { log('saiu do servidor — voz desconectada'); stop(); }
+    setOverlayMode(false);
+    RT.WindowHide && RT.WindowHide(); // saiu do jogo -> some (sem aba na taskbar)
+  });
+  // reabrir o .exe traz a config de volta (single-instance no Go)
+  window.runtime.EventsOn('showConfig', () => { RT.WindowShow && RT.WindowShow(); setCompact(false); });
+} else { log('aviso: fora do Wails (sem posição do jogo)'); }
 
 // ----- WebSocket / WebRTC -----
-let ws = null;
-let pc = null;
-let posTimer = null;
+let ws = null, pc = null, posTimer = null, gotHello = false;
+// reconexao automatica em QUEDA DE REDE (internet ruim/instavel)
+let wantConnected = false, wasEverConnected = false, lastServer = null, reconnectTimer = null, reconnectDelay = 2000;
 
-function setConn(state, label) {
-  const el = document.getElementById('conn');
-  el.textContent = label;
-  el.className = 'badge ' + (state ? 'on' : 'off');
-  document.getElementById('go').disabled = state;
-  document.getElementById('leave').disabled = !state;
+// qualidade de audio: liga FEC (corrige perda de pacote), forca mono e bitrate alvo
+function tuneOpus(sdp) {
+  const m = sdp.match(/a=rtpmap:(\d+)\s+opus/i); if (!m) return sdp;
+  const pt = m[1];
+  const re = new RegExp('(a=fmtp:' + pt + ' )([^\\r\\n]*)');
+  if (re.test(sdp)) {
+    return sdp.replace(re, (_, h, params) => {
+      const kv = params.split(';').filter(Boolean);
+      const set = (k, v) => { const i = kv.findIndex(x => x.trim().startsWith(k + '=')); if (i >= 0) kv[i] = k + '=' + v; else kv.push(k + '=' + v); };
+      set('useinbandfec', '1'); set('usedtx', '1'); set('stereo', '0'); set('sprop-stereo', '0'); set('maxaveragebitrate', '48000');
+      return h + kv.join(';');
+    });
+  }
+  return sdp.replace(new RegExp('(a=rtpmap:' + pt + '\\s+opus[^\\r\\n]*\\r?\\n)'),
+    '$1a=fmtp:' + pt + ' minptime=10;useinbandfec=1;usedtx=1;stereo=0;sprop-stereo=0;maxaveragebitrate=48000\r\n');
 }
+// define o teto de bitrate do mic enviado (ao vivo, via setParameters)
+async function applyBitrate(br) {
+  if (!pc) return;
+  const s = pc.getSenders().find(x => x.track && x.track.kind === 'audio');
+  if (!s) return;
+  const p = s.getParameters(); if (!p.encodings || !p.encodings.length) p.encodings = [{}];
+  p.encodings[0].maxBitrate = br;
+  try { await s.setParameters(p); } catch (_) {}
+}
+async function setAudioBitrate() { await applyBitrate(curBitrate); }
 
-// Deriva a URL do ws a partir do ServerURL:
-//   https://host  -> wss://host/ws
-//   ws://host     -> ws://host/ws  (ja explicito)
-//   wss://host    -> wss://host/ws
-//   host (cru)    -> ws://host/ws
+// ----- adaptacao automatica de bitrate (internet ruim) -----
+// le perda de pacote + RTT reais (getStats) e baixa o bitrate sozinho quando a rede
+// piora, subindo de volta devagar quando limpa. Histerese evita oscilar.
+const BR_LEVELS = [16000, 24000, 32000, 48000]; // degraus de bitrate
+let curBitrate = 48000, netTimer = null, cleanStreak = 0;
+function startNetAdapt() {
+  stopNetAdapt();
+  netTimer = setInterval(async () => {
+    if (!pc) return;
+    let loss = 0, rtt = 0, have = false;
+    try {
+      (await pc.getStats()).forEach(r => {
+        if (r.type === 'remote-inbound-rtp' && r.kind === 'audio') {
+          if (typeof r.fractionLost === 'number') { loss = Math.max(loss, r.fractionLost); have = true; }
+          if (typeof r.roundTripTime === 'number') rtt = Math.max(rtt, r.roundTripTime);
+        }
+      });
+    } catch (_) {}
+    if (!have) return;
+    let i = BR_LEVELS.indexOf(curBitrate); if (i < 0) i = BR_LEVELS.length - 1;
+    if (loss > 0.05 || rtt > 0.4) { i = Math.max(0, i - 1); cleanStreak = 0; }            // rede ruim -> desce ja
+    else if (loss < 0.01) { if (++cleanStreak >= 3) { i = Math.min(BR_LEVELS.length - 1, i + 1); cleanStreak = 0; } } // limpa -> sobe devagar
+    else cleanStreak = 0;
+    const target = BR_LEVELS[i];
+    if (target !== curBitrate) {
+      curBitrate = target; applyBitrate(target);
+      log(`[rede] bitrate -> ${target / 1000}kbps (perda ${(loss * 100).toFixed(0)}%, rtt ${(rtt * 1000) | 0}ms)`, 'info');
+    }
+  }, 3000);
+}
+function stopNetAdapt() { if (netTimer) clearInterval(netTimer); netTimer = null; }
+
+function setConn(s) { connState = s; refreshStatus(); }
+function showFallback(name) { $('fbName').textContent = name || ''; $('fallback').hidden = false; }
+function hideFallback() { $('fallback').hidden = true; }
+function showSettings() { try { $('cfgServer').focus(); $('cfgServer').scrollIntoView({ block: 'center' }); } catch (_) {} }
+
 function wsURLFrom(serverURL) {
-  let u = (serverURL || '').trim();
-  if (!u) return '';
-  if (u.startsWith('https://'))      u = 'wss://' + u.slice('https://'.length);
-  else if (u.startsWith('http://'))  u = 'ws://'  + u.slice('http://'.length);
+  let u = (serverURL || '').trim(); if (!u) return '';
+  if (u.startsWith('https://'))      u = 'wss://' + u.slice(8);
+  else if (u.startsWith('http://'))  u = 'ws://'  + u.slice(7);
   else if (!u.startsWith('ws://') && !u.startsWith('wss://')) u = 'ws://' + u;
-  u = u.replace(/\/+$/, '');           // tira barras finais
-  if (!u.endsWith('/ws')) u += '/ws';
+  u = u.replace(/\/+$/, ''); if (!u.endsWith('/ws')) u += '/ws';
   return u;
 }
 
-async function start(serverURL, password) {
-  if (ws) { log('ja conectado/conectando'); return; }
-  const url = wsURLFrom(serverURL);
-  if (!url || !password) { log('preencha Server URL e Senha'); return; }
+function selectedServer() { return cfg.servers[cfg.selected] || null; }
 
-  setConn(false, 'conectando...');
+function connectSelected() {
+  const s = selectedServer();
+  if (!s || !s.url) { showSettings(); log('configure um servidor'); return; }
+  start(s);
+}
+
+async function start(s) {
+  if (ws) return;
+  const url = wsURLFrom(s.url);
+  if (!url) { log('servidor sem URL'); return; } // senha vazia = passwordless (ok)
+  wantConnected = true; lastServer = s; // intencao de estar conectado (p/ reconectar em queda)
+  hideFallback();
+  gotHello = false;
+  voiceRangeMeters = s.voiceRangeMeters || 50;
+  setConn('connecting');
 
   if (!actx) {
-    actx = new (window.AudioContext || window.webkitAudioContext)();
+    // 48kHz pra casar com a captura nativa (mic-feed). Carrega o AudioWorklet do mic.
+    actx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
     listener = actx.listener;
-    // GainNode master antes do destino (volume vindo da config)
-    masterGain = actx.createGain();
-    masterGain.gain.value = masterVolume;
-    masterGain.connect(actx.destination);
+    masterGain = actx.createGain(); masterGain.gain.value = deafened ? 0 : masterVolume; masterGain.connect(actx.destination);
+    try { await actx.audioWorklet.addModule('mic-feed.js'); } catch (e) { log('worklet do mic falhou: ' + e, 'err'); }
   }
   if (actx.state === 'suspended') { try { await actx.resume(); } catch (_) {} }
+  // saida no device escolhido na config (vazio = device padrao do sistema)
+  if (actx.setSinkId) { try { await actx.setSinkId(cfg.outputDeviceId || ''); } catch (_) {} }
   placeListener();
 
   ws = new WebSocket(url);
   pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
 
-  // cada track que chega (1 por peer) -> PannerNode HRTF -> masterGain -> destino
   pc.ontrack = e => {
     const id = e.streams[0].id;
     if (peers[id] && peers[id].panner) return;
     const src = actx.createMediaStreamSource(e.streams[0]);
-    const panner = new PannerNode(actx, {
-      panningModel: 'HRTF', distanceModel: 'inverse',
-      refDistance: 2, maxDistance: voiceRangeMeters, rolloffFactor: 1,
-    });
-    src.connect(panner).connect(masterGain);
-    // <audio> mudo so pra alguns browsers manterem o stream "ativo"
-    const a = new Audio(); a.muted = true; a.srcObject = e.streams[0];
-    peers[id] = Object.assign(peers[id] || { x:0,y:0,z:0,yaw:0 }, { panner, audio: a });
-    placePanner(peers[id]);
-    log('ouvindo peer ' + id.slice(0,8));
+    const panner = new PannerNode(actx, { panningModel: 'HRTF', distanceModel: 'inverse', refDistance: 5, maxDistance: voiceRangeMeters, rolloffFactor: 0.7 });
+    // dois caminhos: HRTF (direcional, longe) + DIRETO/centralizado (presente, colado).
+    // o HRTF "externaliza" e confunde frente/tras no curto alcance; o caminho direto
+    // domina quando perto pra a voz soar "do seu lado/na cabeca", sem parecer atras.
+    const pannerGain = actx.createGain();
+    const directGain = actx.createGain(); directGain.gain.value = 0;
+    // low-pass no caminho HRTF: abafa quem esta ATRAS (reforca frente/tras, reduz a
+    // confusao classica do HRTF) — frente = aberto, atras = abafado.
+    const lp = new BiquadFilterNode(actx, { type: 'lowpass', frequency: 18000, Q: 0.5 });
+    src.connect(panner).connect(lp).connect(pannerGain).connect(masterGain);
+    src.connect(directGain).connect(masterGain);
+    const a = new Audio(); a.muted = true; a.srcObject = e.streams[0]; // keep-alive do stream
+    if (a.setSinkId) { a.setSinkId(cfg.outputDeviceId || 'default').catch(() => {}); }
+    peers[id] = Object.assign(peers[id] || { x:0,y:0,z:0,yaw:0 }, { panner, pannerGain, directGain, lp, audio: a });
+    placePanner(peers[id]); updatePlayers(); log('ouvindo peer ' + id.slice(0,8), 'ok');
   };
-
-  pc.onicecandidate = e => {
-    if (e.candidate) ws.send(JSON.stringify({ event: 'candidate', data: JSON.stringify(e.candidate) }));
-  };
+  pc.onicecandidate = e => { if (e.candidate) ws.send(JSON.stringify({ event: 'candidate', data: JSON.stringify(e.candidate) })); };
 
   ws.onopen = async () => {
-    ws.send(JSON.stringify({ event: 'auth', data: password }));
+    ws.send(JSON.stringify({ event: 'auth', data: s.password }));
     try {
-      const mic = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mic.getTracks().forEach(t => pc.addTrack(t, mic));
-      log('mic ok, conectando...');
-    } catch (err) {
-      log('ERRO ao abrir microfone: ' + err);
-    }
-    setConn(true, 'conectado');
-    // manda minha posicao 10x/s (mesmo caminho do mod M1 -> companion -> server)
+      // MIC NATIVO: a captura roda em Go via WASAPI com AudioCategory_Other (NAO
+      // Communications), entregue por um WS local de PCM mono float32 @48k. Sem
+      // getUserMedia -> o codec nao entra em "modo comunicacao" -> nao degrada o
+      // resto do audio do sistema. (Esse era o problema do WebRTC do WebView2.)
+      const purl = await window.go.main.App.StartMicCapture(cfg.micDeviceId || '');
+      if (!purl || purl.startsWith('erro')) throw new Error(purl || 'sem captura nativa');
+      const micNode = new AudioWorkletNode(actx, 'mic-feed', { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [1] });
+      // limpeza do mic (sem reabrir o problema do codec, pois roda no WebAudio/worklet):
+      // passa-alta corta zumbido/hum; compressor nivela a voz. O noise gate (silencia
+      // o ruido de fundo no silencio) mora no worklet mic-feed.js.
+      const hp   = new BiquadFilterNode(actx, { type: 'highpass', frequency: 90, Q: 0.707 });
+      const comp = new DynamicsCompressorNode(actx, { threshold: -28, knee: 18, ratio: 3, attack: 0.004, release: 0.18 });
+      micGain = actx.createGain(); micGain.gain.value = micMuted ? 0 : inputVol;
+      const micDest = actx.createMediaStreamDestination();
+      const analyser = actx.createAnalyser(); analyser.fftSize = 1024;
+      const monitorGain = actx.createGain(); monitorGain.gain.value = 0; monitorGain.connect(actx.destination);
+      micProc = { micNode, hp, comp, micGain, micDest, analyser, monitorGain };
+      micDest.stream.getAudioTracks().forEach(t => pc.addTrack(t, micDest.stream));
+      if (proc.rnnoise) await initRNNoise();
+      applyProc();   // monta a cadeia conforme os toggles + envia gate/sensibilidade ao worklet
+      startMeter();
+      // recebe o PCM nativo do Go -> [RNNoise] -> worklet
+      micWs = new WebSocket(purl);
+      micWs.binaryType = 'arraybuffer';
+      micWs.onmessage = ev => { let f = new Float32Array(ev.data);
+        if (proc.rnnoise && rnn && f.length === rnn.FRAME) f = rnn.process(f); // supressao IA
+        micNode.port.postMessage(f, [f.buffer]); };
+      micWs.onerror = () => log('WS do mic nativo: erro', 'warn');
+      populateDevices();
+      log('mic nativo ok (WASAPI — sem degradar o audio)', 'ok');
+    } catch (err) { log('sem microfone (' + err.name + ') — você ouve, mas não fala', 'err'); }
+    setConn('on');
     posTimer = setInterval(() => {
       if (ws && ws.readyState === 1)
         ws.send(JSON.stringify({ event: 'pos', data: `${me.x.toFixed(1)},${me.y.toFixed(1)},${me.z.toFixed(1)},${me.yaw.toFixed(1)}` }));
-    }, 100);
+    }, 50); // 20Hz: dados mais finos; o setTargetAtTime suaviza o intervalo
   };
 
   ws.onmessage = async ev => {
     const m = JSON.parse(ev.data);
-    if (m.event === 'error')  { log('ERRO: ' + m.data); return; }
-    if (m.event === 'hello')  { log('conectado. meu id = ' + m.data.slice(0,8)); return; }
-    if (m.event === 'offer')  {
-      await pc.setRemoteDescription(JSON.parse(m.data));
-      const ans = await pc.createAnswer();
+    if (m.event === 'error')      { log('ERRO: ' + m.data, 'err'); wantConnected = false; return; } // senha errada etc -> nao reconecta
+    if (m.event === 'hello')      { gotHello = true; wasEverConnected = true; reconnectDelay = 2000; hideFallback(); log('conectado (id ' + m.data.slice(0,8) + ')'); return; }
+    if (m.event === 'serverinfo') { // "no compose e o padrao": nome + alcance do servidor
+      try { const si = JSON.parse(m.data); $('mServer').textContent = si.name || '—';
+            const r = parseFloat(si.range); if (r) applyRange(r); } catch (_) {} return;
+    }
+    if (m.event === 'offer') {
+      const off = JSON.parse(m.data); off.sdp = tuneOpus(off.sdp); // FEC/mono no encoder local
+      await pc.setRemoteDescription(off);
+      const ans = await pc.createAnswer(); ans.sdp = tuneOpus(ans.sdp);
       await pc.setLocalDescription(ans);
       ws.send(JSON.stringify({ event: 'answer', data: JSON.stringify(ans) }));
+      setAudioBitrate(); startNetAdapt(); // bitrate inicial + adaptacao automatica p/ rede ruim
     }
     if (m.event === 'candidate') { try { await pc.addIceCandidate(JSON.parse(m.data)); } catch (_) {} }
-    if (m.event === 'pos') { // "x,y,z,yaw" de outro player
+    if (m.event === 'pos') {
       const [x, y, z, yaw] = m.data.split(',').map(Number);
-      const p = peers[m.id] = Object.assign(peers[m.id] || {}, { x, y, z, yaw });
-      placePanner(p);
+      placePanner(peers[m.id] = Object.assign(peers[m.id] || {}, { x, y, z, yaw }));
     }
   };
 
-  ws.onclose = () => { log('ws fechou'); stop(); };
   ws.onerror = () => { log('erro de websocket'); };
+  ws.onclose = () => {
+    stop();
+    if (wantConnected && wasEverConnected && lastServer) {
+      // QUEDA DE REDE: reconecta sozinho com backoff. Nao dispara em saida manual,
+      // sair do jogo (posLost) ou senha errada (esses zeram wantConnected).
+      log(`conexão caiu — reconectando em ${Math.round(reconnectDelay / 1000)}s…`, 'warn');
+      setConn('connecting');
+      clearTimeout(reconnectTimer);
+      reconnectTimer = setTimeout(() => { if (wantConnected) start(lastServer); }, reconnectDelay);
+      reconnectDelay = Math.min(Math.round(reconnectDelay * 1.6), 15000);
+    } else if (!wasEverConnected) {
+      const s2 = selectedServer(); showFallback(s2 ? s2.name : ''); log('falhou — não achei o servidor');
+    }
+  };
 }
 
 function stop() {
   if (posTimer) { clearInterval(posTimer); posTimer = null; }
   if (pc) { try { pc.close(); } catch (_) {} pc = null; }
   if (ws) { try { ws.close(); } catch (_) {} ws = null; }
-  // descarta panners dos peers (mantem objetos de posicao zerados)
   for (const id in peers) {
+    try { if (peers[id].audio) peers[id].audio.srcObject = null; } catch (_) {} // solta o <audio> keep-alive
     try { peers[id].panner && peers[id].panner.disconnect(); } catch (_) {}
     delete peers[id];
   }
-  setConn(false, 'desconectado');
+  // para a captura NATIVA (Go/WASAPI) e fecha o WS de PCM
+  if (micWs) { try { micWs.close(); } catch (_) {} micWs = null; }
+  stopNetAdapt(); curBitrate = 48000;
+  stopMeter(); micProc = null;
+  try { window.go.main.App.StopMicCapture(); } catch (_) {}
+  // fecha o AudioContext (start() recria no proximo connect, recarregando o worklet).
+  if (actx) { try { actx.close(); } catch (_) {} actx = null; listener = null; masterGain = null; micGain = null; }
+  updatePlayers();
+  setConn('off');
 }
 
-// ----- config (Wails bindings) -----
-function applyVolume(v) {
-  masterVolume = v;
-  if (masterGain) masterGain.gain.value = v;
+// ----- processamento do mic (toggles + gate + sensibilidade + medidor + monitor) -----
+// remonta a cadeia: micNode(worklet) -> [passa-alta] -> [compressor] -> micGain -> micDest(WebRTC)
+// + tap pro medidor (nivel de ENTRADA) + saida de monitor (ouvir o proprio mic).
+function applyProc(){
+  if (!micProc) return;
+  const { micNode, hp, comp, micGain, micDest, analyser, monitorGain } = micProc;
+  [micNode, hp, comp, micGain].forEach(n => { try { n.disconnect(); } catch (_) {} });
+  let node = micNode;
+  if (proc.highpass) { node.connect(hp); node = hp; }
+  if (proc.comp)     { node.connect(comp); node = comp; }
+  node.connect(micGain);
+  micGain.connect(micDest);            // -> WebRTC (o que os outros ouvem)
+  micGain.connect(monitorGain);        // -> monitor (voce se ouvir)
+  micNode.connect(analyser);           // tap cru pro medidor de nivel
+  monitorGain.gain.value = proc.monitor ? 1 : 0;
+  micNode.port.postMessage({ gate: proc.gate, open: sensToThreshold(proc.sens) }); // gate no worklet
 }
-function applyRange(m) {
-  voiceRangeMeters = m;
-  // aplica em panners ja existentes
-  for (const id in peers) {
-    const p = peers[id];
-    if (p.panner) p.panner.maxDistance = m;
-  }
-}
-
-function readCfgForm() {
-  return {
-    serverUrl: document.getElementById('cfgServer').value.trim(),
-    password:  document.getElementById('cfgPassword').value,
-    voiceRangeMeters: parseFloat(document.getElementById('cfgRange').value) || 50,
-    volume:    parseFloat(document.getElementById('cfgVolume').value),
+function startMeter(){
+  stopMeter(); if (!micProc) return;
+  const an = micProc.analyser, buf = new Float32Array(an.fftSize);
+  const fill = $('meterFill'), thr = $('meterThr');
+  const tick = () => {
+    an.getFloatTimeDomainData(buf);
+    let sum = 0; for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+    const db = 20 * Math.log10(Math.sqrt(sum / buf.length) + 1e-9);
+    if (fill) fill.style.width = Math.max(0, Math.min(100, (db + 60) / 60 * 100)) + '%';
+    const tdb = 20 * Math.log10(sensToThreshold(proc.sens) + 1e-9);
+    if (thr) thr.style.left = Math.max(0, Math.min(100, (tdb + 60) / 60 * 100)) + '%';
+    meterRAF = requestAnimationFrame(tick);
   };
+  tick();
+}
+function stopMeter(){ if (meterRAF) cancelAnimationFrame(meterRAF); meterRAF = 0;
+  const fill = $('meterFill'); if (fill) fill.style.width = '0%'; }
+function bindProcUI(){
+  const c = id => $(id);
+  if (c('pHighpass')) c('pHighpass').checked = proc.highpass;
+  if (c('pComp'))     c('pComp').checked     = proc.comp;
+  if (c('pGate'))     c('pGate').checked     = proc.gate;
+  if (c('pRnnoise'))  c('pRnnoise').checked  = proc.rnnoise;
+  if (c('pMonitor'))  c('pMonitor').checked  = proc.monitor;
+  if (c('pSens'))   { c('pSens').value = proc.sens; c('pSensVal').textContent = proc.sens; }
+  c('pHighpass') && (c('pHighpass').onchange = e => { proc.highpass = e.target.checked; saveProc(); applyProc(); });
+  c('pComp')     && (c('pComp').onchange     = e => { proc.comp = e.target.checked; saveProc(); applyProc(); });
+  c('pGate')     && (c('pGate').onchange     = e => { proc.gate = e.target.checked; saveProc(); applyProc(); });
+  c('pRnnoise')  && (c('pRnnoise').onchange  = async e => { proc.rnnoise = e.target.checked; saveProc(); if (proc.rnnoise) { c('pRnnoise').disabled = true; await initRNNoise(); c('pRnnoise').disabled = false; } });
+  c('pMonitor')  && (c('pMonitor').onchange  = e => { proc.monitor = e.target.checked; if (micProc) micProc.monitorGain.gain.value = proc.monitor ? 1 : 0; });
+  c('pSens')     && (c('pSens').oninput      = e => { proc.sens = +e.target.value; c('pSensVal').textContent = proc.sens; saveProc(); applyProc(); });
+}
+bindProcUI();
+
+// ----- config / servidores -----
+function applyOutput() { if (masterGain) masterGain.gain.value = deafened ? 0 : masterVolume; }
+function applyInput()  { if (micGain) micGain.gain.value = micMuted ? 0 : inputVol; }
+function applyVolume(v)   { masterVolume = v; applyOutput(); }
+function applyInputVol(v) { inputVol = v; applyInput(); }
+function updateAudioBtns() {
+  const mm = $('muteMic'), df = $('deafen');
+  mm.textContent = micMuted ? '🔇 Mic mutado' : '🎤 Mic'; mm.classList.toggle('muted', micMuted);
+  df.textContent = deafened ? '🔇 Sem som' : '🔊 Som';   df.classList.toggle('muted', deafened);
+}
+function applyRange(m) { voiceRangeMeters = m; for (const id in peers) { const p = peers[id]; if (p.panner) p.panner.maxDistance = m; } }
+
+function renderServerList() {
+  const sel = $('cfgServerSel'); sel.innerHTML = '';
+  cfg.servers.forEach((s, i) => {
+    const o = document.createElement('option'); o.value = i; o.textContent = s.name || s.url || ('servidor ' + (i+1));
+    if (i === cfg.selected) o.selected = true; sel.appendChild(o);
+  });
+  if (cfg.servers.length === 0) { const o = document.createElement('option'); o.textContent = '(nenhum — clique + Novo)'; sel.appendChild(o); }
+}
+function fillServerFields(s) {
+  s = s || { name:'', url:'', password:'', voiceRangeMeters:50 };
+  $('cfgName').value = s.name || ''; $('cfgServer').value = s.url || '';
+  $('cfgPassword').value = s.password || ''; $('cfgRange').value = s.voiceRangeMeters || 50;
+}
+function readServerFields() {
+  return { name: $('cfgName').value.trim(), url: $('cfgServer').value.trim(),
+           password: $('cfgPassword').value, voiceRangeMeters: parseFloat($('cfgRange').value) || 50 };
 }
 
-function fillCfgForm(cfg) {
-  document.getElementById('cfgServer').value   = cfg.serverUrl || '';
-  document.getElementById('cfgPassword').value = cfg.password || '';
-  document.getElementById('cfgRange').value    = cfg.voiceRangeMeters || 50;
-  const vol = (cfg.volume == null) ? 1.0 : cfg.volume;
-  document.getElementById('cfgVolume').value   = vol;
-  document.getElementById('cfgVolumeVal').textContent = vol.toFixed(2);
+// ----- dispositivos -----
+// Os NOMES dos devices de SAIDA vem do navegador, que so revela os labels apos uma
+// permissao de mic. Como a captura virou nativa (sem getUserMedia), destravamos os
+// labels UMA vez (rapido, fora da chamada): abre o mic e fecha na hora. Nao reintroduz
+// o problema do codec na voz (a chamada segue 100% nativa).
+let labelsUnlocked = false;
+async function unlockDeviceLabels() {
+  if (labelsUnlocked) return;
+  try { const t = await navigator.mediaDevices.getUserMedia({ audio: true }); t.getTracks().forEach(x => x.stop()); labelsUnlocked = true; }
+  catch (_) {}
+}
+async function populateDevices() {
+  const mic = $('cfgMic'), out = $('cfgOutput'); mic.innerHTML = ''; out.innerHTML = '';
+  const addOpt = (sel, id, label, selId) => { const o = document.createElement('option'); o.value = id;
+    o.textContent = label || (id ? id.slice(0,10) : 'Padrão'); if (id === selId) o.selected = true; sel.appendChild(o); };
+  // MIC: devices NATIVOS do Windows (WASAPI, via Go) — e' o que a captura realmente usa.
+  addOpt(mic, '', 'Padrão do Windows', cfg.micDeviceId);
+  try { const mics = await window.go.main.App.ListMicDevices();
+    (mics || []).forEach(d => addOpt(mic, d.id, d.name, cfg.micDeviceId)); } catch (_) {}
+  // SAIDA: devices do navegador (a saida usa setSinkId/WebAudio).
+  addOpt(out, '', 'Padrão', cfg.outputDeviceId);
+  let devices = []; try { devices = await navigator.mediaDevices.enumerateDevices(); } catch (_) {}
+  let hasLabels = false;
+  devices.forEach(d => { if (d.kind === 'audiooutput') { if (d.label) hasLabels = true; addOpt(out, d.deviceId, d.label, cfg.outputDeviceId); } });
+  $('cfgDevHint').textContent = hasLabels ? '' : '"Atualizar dispositivos" pra ver os nomes da saída';
+}
+async function refreshDevices() {
+  labelsUnlocked = false; await unlockDeviceLabels(); // re-scan: força destravar os nomes
+  await populateDevices();
+}
+
+// pega TUDO da UI -> objeto cfg
+function gatherConfig() {
+  if (cfg.servers.length === 0) cfg.servers.push(readServerFields());
+  else cfg.servers[cfg.selected] = readServerFields();
+  cfg.volume = parseFloat($('cfgVolume').value);
+  cfg.inputVolume = parseFloat($('cfgInputVol').value);
+  cfg.micDeviceId = $('cfgMic').value || '';
+  cfg.outputDeviceId = $('cfgOutput').value || '';
+  cfg.autoConnect = $('cfgAuto').checked;
+  cfg.autoDetect = $('cfgAutoDetect').checked;
+  cfg.autoPort = parseInt($('cfgAutoPort').value) || 8765;
+  cfg.autoPassword = $('cfgAutoPassword').value;
+  return cfg;
 }
 
 // ----- UI wiring -----
-document.getElementById('cfgVolume').addEventListener('input', e => {
-  const v = parseFloat(e.target.value);
-  document.getElementById('cfgVolumeVal').textContent = v.toFixed(2);
-  applyVolume(v); // preview em tempo real
+$('cfgVolume').addEventListener('input', e => { const v = parseFloat(e.target.value); $('cfgVolumeVal').textContent = Math.round(v*100)+'%'; applyVolume(v); });
+$('cfgInputVol').addEventListener('input', e => { const v = parseFloat(e.target.value); $('cfgInputVolVal').textContent = Math.round(v*100)+'%'; applyInputVol(v); });
+$('muteMic').onclick = () => { micMuted = !micMuted; applyInput(); updateAudioBtns(); };
+$('deafen').onclick  = () => { deafened = !deafened; applyOutput(); updateAudioBtns(); };
+$('cfgRefreshDevices').addEventListener('click', refreshDevices);
+// mic escolhido aplica na proxima conexao (reconecte pra trocar o device em uso)
+$('cfgMic').addEventListener('change', e => { cfg.micDeviceId = e.target.value || ''; });
+$('cfgServerSel').addEventListener('change', e => { cfg.selected = parseInt(e.target.value) || 0; fillServerFields(selectedServer()); });
+$('cfgAdd').addEventListener('click', () => { cfg.servers.push({ name:'Novo', url:'', password:'', voiceRangeMeters:50 }); cfg.selected = cfg.servers.length-1; renderServerList(); fillServerFields(selectedServer()); });
+$('cfgDel').addEventListener('click', () => { if (!cfg.servers.length) return; cfg.servers.splice(cfg.selected,1); cfg.selected = 0; renderServerList(); fillServerFields(selectedServer()); });
+
+$('cfgSave').addEventListener('click', async () => {
+  gatherConfig(); applyVolume(cfg.volume); renderServerList();
+  if (cfg.outputDeviceId && actx && actx.setSinkId) { try { await actx.setSinkId(cfg.outputDeviceId); } catch (_) {} }
+  try { await window.go.main.App.SaveConfig(cfg); $('cfgSaved').textContent = 'salvo ✓'; setTimeout(() => $('cfgSaved').textContent = '', 2000); }
+  catch (err) { log('erro ao salvar: ' + err); }
 });
 
-document.getElementById('cfgSave').addEventListener('click', async () => {
-  const cfg = readCfgForm();
-  applyRange(cfg.voiceRangeMeters);
-  applyVolume(cfg.volume);
-  try {
-    await window.go.main.App.SaveConfig(cfg);
-    const el = document.getElementById('cfgSaved');
-    el.textContent = 'salvo ✓';
-    setTimeout(() => { el.textContent = ''; }, 2000);
-  } catch (err) {
-    log('erro ao salvar config: ' + err);
-  }
-});
+$('fbConfig').addEventListener('click', () => { hideFallback(); showSettings(); });
+$('fbIgnore').addEventListener('click', hideFallback);
 
-document.getElementById('go').onclick = () => {
-  const cfg = readCfgForm();
-  applyRange(cfg.voiceRangeMeters);
-  applyVolume(cfg.volume);
-  start(cfg.serverUrl, cfg.password);
-};
-document.getElementById('leave').onclick = stop;
+// botoes manuais: Conectar (servidor selecionado) / Desconectar
+$('go').onclick = () => { hideFallback(); connectSelected(); };
+$('leave').onclick = () => { wantConnected = false; clearTimeout(reconnectTimer); stop(); }; // Sair manual -> nao reconecta
 
-// ----- boot: carrega config e auto-conecta -----
+// ----- boot -----
 (async () => {
   try {
-    const cfg = await window.go.main.App.GetConfig();
-    fillCfgForm(cfg);
-    applyRange(cfg.voiceRangeMeters || 50);
-    masterVolume = (cfg.volume == null) ? 1.0 : cfg.volume; // aplicado ao criar o masterGain
-    log('config carregada');
-    if (cfg.serverUrl && cfg.password) {
-      log('auto-conectando...');
-      start(cfg.serverUrl, cfg.password);
-    } else {
-      // abre a secao de config se faltam dados
-      document.getElementById('cfgSection').open = true;
-    }
+    cfg = await window.go.main.App.GetConfig();
+    if (!cfg.servers) cfg.servers = [];
+    masterVolume = (cfg.volume == null) ? 1.0 : cfg.volume;
+    $('cfgVolume').value = masterVolume; $('cfgVolumeVal').textContent = Math.round(masterVolume*100)+'%';
+    inputVol = (cfg.inputVolume == null) ? 1.0 : cfg.inputVolume;
+    $('cfgInputVol').value = inputVol; $('cfgInputVolVal').textContent = Math.round(inputVol*100)+'%';
+    $('cfgAuto').checked = cfg.autoConnect !== false;
+    $('cfgAutoDetect').checked = !!cfg.autoDetect;
+    $('cfgAutoPort').value = cfg.autoPort || 8765;
+    $('cfgAutoPassword').value = cfg.autoPassword || '';
+    renderServerList(); fillServerFields(selectedServer());
+    await unlockDeviceLabels(); // destrava os nomes da saída uma vez (fora da chamada)
+    await populateDevices();
+    const s = selectedServer();
+    if (s) applyRange(s.voiceRangeMeters || 50);
+    log('pronto — esperando entrar no jogo');
+    applyOverlayStyle(); // tira a aba da taskbar ja na abertura
+    if (!cfg.autoDetect && (!s || !s.url || !s.password)) { showSettings(); log('adicione um servidor na config'); }
   } catch (err) {
-    log('erro ao carregar config (rodando fora do Wails?): ' + err);
-    document.getElementById('cfgSection').open = true;
+    log('erro ao carregar config: ' + err); showSettings();
   }
 })();

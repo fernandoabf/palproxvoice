@@ -30,8 +30,10 @@ var (
 	peers       []*peerState
 	trackLocals = map[string]*webrtc.TrackLocalStaticRTP{}
 
-	api      *webrtc.API
-	password string
+	api        *webrtc.API
+	password   string
+	serverName string // nome do servidor (env), mandado pro cliente
+	voiceRange string // alcance recomendado (env), mandado pro cliente
 
 	upgrader = websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
 )
@@ -53,6 +55,8 @@ type wsMsg struct {
 func main() {
 	password = os.Getenv("VOICE_PASSWORD")
 	publicIP := os.Getenv("PUBLIC_IP") // IP publico do VPS
+	serverName = envOr("SERVER_NAME", "PalProxVoice")
+	voiceRange = envOr("VOICE_RANGE", "50") // alcance recomendado (m)
 	wsPort := envOr("WS_PORT", "8080")
 
 	// Uma faixa fixa de portas UDP pro audio + anuncia o IP publico (sem TURN).
@@ -106,7 +110,8 @@ func websocketHandler(w http.ResponseWriter, r *http.Request) {
 	if err := conn.ReadJSON(&first); err != nil {
 		return
 	}
-	if first.Event != "auth" || first.Data != password {
+	// password vazio no server = sem senha (modo publico / auto-descoberta)
+	if first.Event != "auth" || (password != "" && first.Data != password) {
 		_ = conn.WriteJSON(&wsMsg{Event: "error", Data: "auth failed"})
 		return
 	}
@@ -170,6 +175,10 @@ func websocketHandler(w http.ResponseWriter, r *http.Request) {
 	defer removePeer(id)
 
 	_ = conn.WriteJSON(&wsMsg{Event: "hello", Data: id})
+	// manda a config do servidor (nome + alcance) — "no compose e o padrao"
+	if info, err := json.Marshal(map[string]string{"name": serverName, "range": voiceRange}); err == nil {
+		_ = conn.WriteJSON(&wsMsg{Event: "serverinfo", Data: string(info)})
+	}
 
 	// loop de leitura
 	for {

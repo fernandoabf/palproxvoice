@@ -3,48 +3,243 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PalProxVoice Companion</title>
-<link rel="stylesheet" href="app.css">
+<title>PalProxVoice</title>
+<style>
+  :root{
+    --accent:#5b9dff; --accent2:#3f7ce0;
+    --good:#3fb950; --warn:#e3b341; --bad:#f06f6f; --info:#5b9dff;
+    --card:#151d2d; --card2:#101725; --line:rgba(255,255,255,.08); --line2:rgba(255,255,255,.14);
+    --txt:#e8eef7; --muted:#94a3b8; --faint:#6b7888; --radius:14px;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0; font-family:system-ui,-apple-system,"Segoe UI",sans-serif; color:var(--txt);
+    background:linear-gradient(160deg,#0b1220 0%,#111827 100%); -webkit-font-smoothing:antialiased;
+    height:100vh; display:flex; flex-direction:column; overflow:hidden;
+  }
+  .winbar{display:flex;align-items:center;justify-content:space-between;height:34px;padding:0 4px 0 14px;
+        background:#0b1018;border-bottom:1px solid var(--line);flex:none}
+  .wb-title{font-size:12.5px;font-weight:600;color:var(--muted)}
+  .wb-btns{display:flex;--wails-draggable:no-drag}
+  .wb-btn{width:36px;height:28px;border:none;background:none;color:var(--muted);font-size:13px;cursor:pointer;border-radius:6px}
+  .wb-btn:hover{background:rgba(255,255,255,.08);color:var(--txt)}
+  .wb-btn.close:hover{background:var(--bad);color:#fff}
+  .scroll{flex:1;overflow:auto}
+  .app{max-width:880px;margin:0 auto;padding:20px;display:flex;flex-direction:column;gap:16px}
+  #hud{position:fixed;inset:0;display:flex;align-items:center;gap:7px;padding:0 6px 0 14px;font-size:13.5px;
+       background:linear-gradient(180deg,#10182a,#0b1220)}
+  #hud .sdot{width:10px;height:10px}
+  #hud .hud-sep{color:var(--faint)}
+  #hud .hud-lbl{color:var(--muted);font-size:12px;margin-left:3px}
+  #hud #hudExpand{margin-left:auto;--wails-draggable:no-drag;width:28px;height:28px;border:none;background:none;
+       color:var(--muted);cursor:pointer;border-radius:6px;font-size:13px}
+  #hud #hudExpand:hover{background:rgba(255,255,255,.08);color:var(--txt)}
+
+  /* header */
+  .topbar{display:flex;align-items:center;justify-content:space-between;
+    background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:14px 18px}
+  .brand{display:flex;align-items:center;gap:12px}
+  .brand .mark{font-size:26px}
+  .brand .name{font-size:17px;font-weight:700;letter-spacing:.2px}
+  .brand .tag{font-size:12px;color:var(--muted);margin-top:1px}
+  .badge{font-size:12.5px;font-weight:650;padding:6px 13px;border-radius:999px;display:flex;align-items:center;gap:7px}
+  .badge::before{content:"";width:8px;height:8px;border-radius:50%;background:currentColor;box-shadow:0 0 8px currentColor}
+  .badge.off{color:var(--bad);background:rgba(240,111,111,.1)}
+  .badge.searching{color:var(--warn);background:rgba(227,179,65,.12)}
+  .badge.on{color:var(--good);background:rgba(63,185,80,.12)}
+
+  /* cards */
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px;
+        box-shadow:0 16px 40px -28px #000}
+  .card-h{font-size:11px;font-weight:700;letter-spacing:.9px;text-transform:uppercase;color:var(--faint);margin-bottom:14px}
+  [hidden]{display:none!important}
+
+  /* 2-column grid */
+  .grid{display:grid;grid-template-columns:minmax(240px,1fr) 1.35fr;gap:16px;align-items:start}
+  .rightcol{display:flex;flex-direction:column;gap:16px}
+  @media(max-width:680px){.grid{grid-template-columns:1fr}}
+
+  /* control card */
+  .control{display:flex;flex-direction:column;gap:14px}
+  .bigstatus{display:flex;align-items:center;gap:11px;font-size:20px;font-weight:700}
+  .sdot{width:13px;height:13px;border-radius:50%;flex:none}
+  .sdot.off{background:var(--bad);box-shadow:0 0 12px var(--bad)}
+  .sdot.searching{background:var(--warn);box-shadow:0 0 12px var(--warn)}
+  .sdot.on{background:var(--good);box-shadow:0 0 12px var(--good)}
+  .substatus{font-size:13px;color:var(--muted);margin-top:-6px}
+  .meta{display:flex;flex-direction:column;gap:10px;padding:12px 0;border-top:1px solid var(--line)}
+  .meta .mrow{display:flex;justify-content:space-between;align-items:center;font-size:14px}
+  .meta .k{color:var(--muted);font-size:12.5px}
+  .meta .v{font-weight:650}
+  .btn{font:inherit;font-size:14.5px;font-weight:650;color:#fff;border:none;cursor:pointer;
+       padding:13px;border-radius:11px;width:100%;transition:.15s}
+  .btn.primary{background:linear-gradient(180deg,var(--accent),var(--accent2));box-shadow:0 8px 20px -10px var(--accent)}
+  .btn.primary:hover{filter:brightness(1.08)}
+  .btn.danger{background:transparent;border:1px solid rgba(240,111,111,.5);color:var(--bad)}
+  .btn.danger:hover{background:rgba(240,111,111,.1)}
+  .audioctl{display:flex;gap:9px}
+  .ctlbtn{flex:1;font:inherit;font-size:13.5px;font-weight:600;color:var(--txt);background:var(--card2);
+        border:1px solid var(--line2);border-radius:10px;padding:10px;cursor:pointer;transition:.15s}
+  .ctlbtn:hover{border-color:var(--accent)}
+  .ctlbtn.muted{background:rgba(240,111,111,.15);border-color:rgba(240,111,111,.5);color:var(--bad)}
+
+  /* fields */
+  .field{display:flex;flex-direction:column;gap:6px;font-size:12px;color:var(--muted);margin-bottom:12px}
+  .field:last-child{margin-bottom:0}
+  .field input,.field select{font:inherit;font-size:14px;color:var(--txt);background:var(--card2);
+        border:1px solid var(--line2);border-radius:9px;padding:10px 11px;width:100%;transition:.15s}
+  .field input:focus,.field select:focus{outline:none;border-color:var(--accent)}
+  .rowline{display:flex;gap:9px;align-items:center}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .switch{display:flex;align-items:center;gap:10px;font-size:13.5px;color:var(--txt);cursor:pointer;margin-bottom:12px}
+  .switch input{appearance:none;width:38px;height:22px;background:#2a3550;border-radius:999px;position:relative;cursor:pointer;transition:.2s;flex:none}
+  .switch input::after{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#fff;transition:.2s}
+  .switch input:checked{background:var(--accent)}
+  .switch input:checked::after{left:18px}
+  .sep{border:none;border-top:1px solid var(--line);margin:4px 0 12px}
+  .mini{font:inherit;font-size:12.5px;font-weight:600;color:var(--muted);background:var(--card2);
+        border:1px solid var(--line2);border-radius:8px;padding:8px 12px;cursor:pointer;transition:.15s;white-space:nowrap}
+  .mini:hover{border-color:var(--accent);color:var(--txt)}
+  .mini.accent{background:var(--accent);border-color:var(--accent);color:#fff}
+  .dim{font-size:11.5px;color:var(--faint)}
+  .hint{font-size:12px;color:var(--good)}
+  input[type=range]{flex:1;accent-color:var(--accent)}
+  .save-row{display:flex;align-items:center;justify-content:flex-end;gap:12px;margin-top:4px}
+
+  /* medidor de nivel do mic (estilo Discord) */
+  .meter{position:relative;height:10px;background:var(--card2);border:1px solid var(--line2);
+         border-radius:6px;overflow:hidden;margin:2px 0 6px}
+  .meter-fill{height:100%;width:0%;background:linear-gradient(90deg,var(--good),var(--warn) 70%,var(--bad));
+              transition:width .04s linear}
+  .meter-thr{position:absolute;top:-2px;bottom:-2px;width:2px;background:#fff;left:50%;box-shadow:0 0 5px #000}
+
+  /* alert */
+  #fallback{background:rgba(240,111,111,.08);border:1px solid rgba(240,111,111,.4);border-radius:var(--radius);
+        padding:13px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:13.5px;flex-wrap:wrap}
+
+  /* log */
+  #log{font-family:ui-monospace,monospace;font-size:12px;line-height:1.7;max-height:170px;overflow:auto}
+  #log .l{display:flex;gap:10px}
+  #log .l .t{color:var(--faint);flex:none}
+</style>
 </head>
 <body>
-  <div class="wrap">
-    <h3>PalProxVoice Companion</h3>
+<div class="winbar" style="--wails-draggable:drag">
+  <span class="wb-title">🦖 PalProxVoice</span>
+  <div class="wb-btns">
+    <button id="tbCompact" class="wb-btn" title="Diminuir (modo overlay)">—</button>
+    <button id="tbClose" class="wb-btn close" title="Fechar">✕</button>
+  </div>
+</div>
+<div class="scroll">
+<div class="app">
 
-    <div class="row">
-      <button id="go">Entrar</button>
-      <button id="leave" disabled>Sair</button>
-      <span id="conn" class="badge off">desconectado</span>
+  <div class="topbar">
+    <div class="brand">
+      <span class="mark">🦖</span>
+      <div><div class="name">PalProxVoice</div><div class="tag">Voice proximity for Palworld</div></div>
+    </div>
+    <span id="conn" class="badge off">Offline</span>
+  </div>
+
+  <div id="fallback" hidden>
+    <div>⚠️ Não consegui conectar ao servidor <b><span id="fbName"></span></b>.</div>
+    <div class="rowline">
+      <button id="fbConfig" class="mini accent">Configurar</button>
+      <button id="fbIgnore" class="mini">Ignorar</button>
+    </div>
+  </div>
+
+  <div class="grid">
+
+    <!-- ESQUERDA: controle -->
+    <div class="card control">
+      <div class="card-h">Status do sistema</div>
+      <div class="bigstatus"><span id="statusDot" class="sdot off"></span> <span id="connTxt">Offline</span></div>
+      <div id="status" class="substatus">aguardando o jogo…</div>
+
+      <div id="connMeta" class="meta" hidden>
+        <div class="mrow"><span class="k">Servidor</span><span id="mServer" class="v">—</span></div>
+        <div class="mrow"><span class="k">Jogadores</span><span id="mPlayers" class="v">0</span></div>
+        <div class="mrow"><span class="k">Canal</span><span class="v">Proximidade</span></div>
+      </div>
+
+      <div id="audioCtl" class="audioctl" hidden>
+        <button id="muteMic" class="ctlbtn">🎤 Mic</button>
+        <button id="deafen" class="ctlbtn">🔊 Som</button>
+      </div>
+
+      <button id="go" class="btn primary">🎙️ Iniciar voz de proximidade</button>
+      <button id="leave" class="btn danger" hidden>Desconectar</button>
     </div>
 
-    <canvas id="stage" width="688" height="240"></canvas>
-    <div id="status">—</div>
+    <!-- DIREITA: configurações -->
+    <div class="rightcol">
 
-    <details id="cfgSection">
-      <summary>Configurações</summary>
-      <div class="cfg">
-        <label>Server URL
-          <input id="cfgServer" type="text" placeholder="https://servidor.com  ou  ws://127.0.0.1:8080">
-        </label>
-        <label>Senha
-          <input id="cfgPassword" type="password" placeholder="VOICE_PASSWORD">
-        </label>
-        <label>Alcance da voz (metros)
-          <input id="cfgRange" type="number" min="1" max="500" step="1" value="50">
-        </label>
-        <label>Volume
-          <input id="cfgVolume" type="range" min="0" max="2" step="0.05" value="1">
-          <span id="cfgVolumeVal" class="muted">1.00</span>
-        </label>
-        <div class="row">
-          <button id="cfgSave">Salvar</button>
-          <span id="cfgSaved" class="muted"></span>
-        </div>
+      <div class="card">
+        <div class="card-h">Áudio</div>
+        <label class="field">Microfone <select id="cfgMic"></select></label>
+        <label class="field">Volume do microfone (entrada) <div class="rowline"><input id="cfgInputVol" type="range" min="0" max="2" step="0.05" value="1"><span id="cfgInputVolVal" class="dim">100%</span></div></label>
+        <label class="field">Saída de áudio <select id="cfgOutput"></select></label>
+        <label class="field">Volume de saída <div class="rowline"><input id="cfgVolume" type="range" min="0" max="2" step="0.05" value="1"><span id="cfgVolumeVal" class="dim">100%</span></div></label>
+        <div class="rowline"><button id="cfgRefreshDevices" class="mini">Atualizar dispositivos</button><span id="cfgDevHint" class="dim"></span></div>
       </div>
-    </details>
 
+      <div class="card">
+        <div class="card-h">Processamento do microfone</div>
+        <label class="switch"><input id="pHighpass" type="checkbox" checked> Passa-alta <span class="dim">(corta zumbido/hum)</span></label>
+        <label class="switch"><input id="pComp" type="checkbox" checked> Compressor <span class="dim">(nivela a voz)</span></label>
+        <label class="switch"><input id="pGate" type="checkbox" checked> Noise gate <span class="dim">(corta ruído de fundo)</span></label>
+        <label class="switch"><input id="pRnnoise" type="checkbox"> Supressão de ruído IA <span class="dim">(RNNoise — mata teclado/ventilador até falando)</span></label>
+        <label class="field">Sensibilidade do gate
+          <div class="rowline"><input id="pSens" type="range" min="0" max="100" step="1" value="50"><span id="pSensVal" class="dim">50</span></div>
+        </label>
+        <div class="meter"><div id="meterFill" class="meter-fill"></div><div id="meterThr" class="meter-thr"></div></div>
+        <div class="dim" style="margin:-2px 0 12px">Falando, a barra passa do marcador (branco) → abre. Em silêncio, fica abaixo → corta.</div>
+        <label class="switch"><input id="pMonitor" type="checkbox"> 🎧 Ouvir meu microfone <span class="dim">(teste — use fone)</span></label>
+      </div>
+
+      <div class="card">
+        <div class="card-h">Servidor</div>
+        <label class="switch"><input id="cfgAutoDetect" type="checkbox"> Detectar servidor do jogo (automático)</label>
+        <div class="two">
+          <label class="field">Porta da voz <input id="cfgAutoPort" type="number" value="8765"></label>
+          <label class="field">Senha (auto) <input id="cfgAutoPassword" type="password" placeholder="vazio = sem senha"></label>
+        </div>
+        <hr class="sep">
+        <div class="dim" style="margin-bottom:10px">Servidor manual (fallback)</div>
+        <div class="rowline" style="margin-bottom:12px">
+          <select id="cfgServerSel" style="flex:1"></select>
+          <button id="cfgAdd" class="mini">+ Novo</button>
+          <button id="cfgDel" class="mini">Remover</button>
+        </div>
+        <label class="field">Nome <input id="cfgName" type="text" placeholder="OurWorld"></label>
+        <label class="field">Endereço <input id="cfgServer" type="text" placeholder="https://voz.seudominio.com"></label>
+        <label class="field">Senha <input id="cfgPassword" type="password" placeholder="VOICE_PASSWORD"></label>
+        <label class="field">Alcance da voz (metros) <input id="cfgRange" type="number" min="1" max="500" step="1" value="50"></label>
+        <label class="switch"><input id="cfgAuto" type="checkbox"> Conectar automaticamente ao entrar no jogo</label>
+        <div class="save-row"><span id="cfgSaved" class="hint"></span><button id="cfgSave" class="mini accent">Salvar</button></div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- LOG -->
+  <div class="card">
+    <div class="card-h">Logs do sistema</div>
     <div id="log"></div>
   </div>
 
-  <script src="app.js"></script>
+</div>
+</div>
+<div id="hud" style="--wails-draggable:drag" hidden>
+  <span id="hudDot" class="sdot off"></span>
+  <span id="hudTxt">Offline</span>
+  <span class="hud-sep">·</span>
+  <b id="hudPlayers">0</b><span class="hud-lbl">players</span>
+  <button id="hudExpand" title="Abrir janela">⤢</button>
+</div>
+<script src="app.js"></script>
 </body>
 </html>
