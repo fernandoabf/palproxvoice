@@ -319,18 +319,15 @@ func captureLoop(stop chan struct{}, deviceID string) {
 	}
 	defer ac2.Stop()
 	micLog("captura iniciada OK")
-	var totalFrames uint64
-	var lastLog time.Time
 
 	mono := make([]float32, 0, captureFrame*4)
 	ticker := time.NewTicker(5 * time.Millisecond)
 	defer ticker.Stop()
 
-	var peak float32
 	for {
 		select {
 		case <-stop:
-			micLog("stop recebido; total=%d amostras", totalFrames)
+			micLog("stop recebido")
 			return
 		case <-ticker.C:
 		}
@@ -354,9 +351,6 @@ func captureLoop(stop chan struct{}, deviceID string) {
 						s = src[i*ch]
 					}
 					mono = append(mono, s)
-					if a := float32(math.Abs(float64(s))); a > peak {
-						peak = a
-					}
 				}
 			} else if frames > 0 {
 				// silencio ou formato inesperado -> zeros (mantem o ritmo)
@@ -364,7 +358,6 @@ func captureLoop(stop chan struct{}, deviceID string) {
 					mono = append(mono, 0)
 				}
 			}
-			totalFrames += uint64(frames)
 			acc.ReleaseBuffer(frames)
 			if acc.GetNextPacketSize(&packet) != nil {
 				return
@@ -373,14 +366,6 @@ func captureLoop(stop chan struct{}, deviceID string) {
 		for len(mono) >= captureFrame {
 			sendFrame(mono[:captureFrame])
 			mono = mono[captureFrame:]
-		}
-		if time.Since(lastLog) > 2*time.Second {
-			lastLog = time.Now()
-			micCap.connMu.Lock()
-			hasConn := micCap.conn != nil
-			micCap.connMu.Unlock()
-			micLog("vivo: total=%d amostras, pico=%.4f, ws_conectado=%t", totalFrames, peak, hasConn)
-			peak = 0
 		}
 	}
 }
