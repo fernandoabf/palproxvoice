@@ -128,8 +128,8 @@
 <div class="winbar" style="--wails-draggable:drag">
   <span class="wb-title">🦖 PalProxVoice</span>
   <div class="wb-btns">
-    <button id="tbCompact" class="wb-btn" title="Diminuir (modo overlay)">—</button>
-    <button id="tbClose" class="wb-btn close" title="Fechar">✕</button>
+    <button id="tbCompact" class="wb-btn" data-i18n-title="win_min" title="Diminuir (modo overlay)">—</button>
+    <button id="tbClose" class="wb-btn close" data-i18n-title="win_close" title="Fechar">✕</button>
   </div>
 </div>
 <div class="scroll">
@@ -138,16 +138,16 @@
   <div class="topbar">
     <div class="brand">
       <span class="mark">🦖</span>
-      <div><div class="name">PalProxVoice</div><div class="tag">Voice proximity for Palworld</div></div>
+      <div><div class="name">PalProxVoice</div><div class="tag" data-i18n="tagline">Voice proximity for Palworld</div></div>
     </div>
     <span id="conn" class="badge off">Offline</span>
   </div>
 
   <div id="fallback" hidden>
-    <div>⚠️ Não consegui conectar ao servidor <b><span id="fbName"></span></b>.</div>
+    <div><span data-i18n="fb_msg">⚠️ Não consegui conectar ao servidor</span> <b><span id="fbName"></span></b>.</div>
     <div class="rowline">
-      <button id="fbConfig" class="mini accent">Configurar</button>
-      <button id="fbIgnore" class="mini">Ignorar</button>
+      <button id="fbConfig" class="mini accent" data-i18n="fb_config">Configurar</button>
+      <button id="fbIgnore" class="mini" data-i18n="fb_ignore">Ignorar</button>
     </div>
   </div>
 
@@ -155,14 +155,14 @@
 
     <!-- ESQUERDA: controle -->
     <div class="card control">
-      <div class="card-h">Status do sistema</div>
+      <div class="card-h" data-i18n="st_title">Status do sistema</div>
       <div class="bigstatus"><span id="statusDot" class="sdot off"></span> <span id="connTxt">Offline</span></div>
       <div id="status" class="substatus">aguardando o jogo…</div>
 
       <div id="connMeta" class="meta" hidden>
-        <div class="mrow"><span class="k">Servidor</span><span id="mServer" class="v">—</span></div>
-        <div class="mrow"><span class="k">Jogadores</span><span id="mPlayers" class="v">0</span></div>
-        <div class="mrow"><span class="k">Canal</span><span class="v">Proximidade</span></div>
+        <div class="mrow"><span class="k" data-i18n="m_server">Servidor</span><span id="mServer" class="v">—</span></div>
+        <div class="mrow"><span class="k" data-i18n="m_players">Jogadores</span><span id="mPlayers" class="v">0</span></div>
+        <div class="mrow"><span class="k" data-i18n="m_channel">Canal</span><span class="v" data-i18n="ch_prox">Proximidade</span></div>
       </div>
 
       <div id="audioCtl" class="audioctl" hidden>
@@ -170,56 +170,57 @@
         <button id="deafen" class="ctlbtn">🔊 Som</button>
       </div>
 
-      <button id="go" class="btn primary">🎙️ Iniciar voz de proximidade</button>
-      <button id="leave" class="btn danger" hidden>Desconectar</button>
+      <button id="go" class="btn primary" data-i18n="btn_start">🎙️ Iniciar voz de proximidade</button>
+      <button id="leave" class="btn danger" hidden data-i18n="btn_leave">Desconectar</button>
     </div>
 
     <!-- DIREITA: configurações -->
     <div class="rightcol">
 
       <div class="card">
-        <div class="card-h">Áudio</div>
-        <label class="field">Microfone <select id="cfgMic"></select></label>
-        <label class="field">Volume do microfone (entrada) <div class="rowline"><input id="cfgInputVol" type="range" min="0" max="2" step="0.05" value="1"><span id="cfgInputVolVal" class="dim">100%</span></div></label>
-        <label class="field">Saída de áudio <select id="cfgOutput"></select></label>
-        <label class="field">Volume de saída <div class="rowline"><input id="cfgVolume" type="range" min="0" max="2" step="0.05" value="1"><span id="cfgVolumeVal" class="dim">100%</span></div></label>
-        <div class="rowline"><button id="cfgRefreshDevices" class="mini">Atualizar dispositivos</button><span id="cfgDevHint" class="dim"></span></div>
+        <div class="card-h" data-i18n="audio">Áudio</div>
+        <label class="field"><span data-i18n="lang">🌐 Idioma / Language</span> <select id="cfgLang"><option value="pt">Português</option><option value="en">English</option></select></label>
+        <label class="field"><span data-i18n="mic">Microfone</span> <select id="cfgMic"></select></label>
+        <label class="field"><span data-i18n="vol_in">Volume do microfone (entrada)</span> <div class="rowline"><input id="cfgInputVol" type="range" min="0" max="2" step="0.05" value="1"><span id="cfgInputVolVal" class="dim">100%</span></div></label>
+        <label class="field"><span data-i18n="out">Saída de áudio</span> <select id="cfgOutput"></select></label>
+        <label class="field"><span data-i18n="vol_out">Volume de saída</span> <div class="rowline"><input id="cfgVolume" type="range" min="0" max="2" step="0.05" value="1"><span id="cfgVolumeVal" class="dim">100%</span></div></label>
+        <div class="rowline"><button id="cfgRefreshDevices" class="mini" data-i18n="refresh">Atualizar dispositivos</button><span id="cfgDevHint" class="dim"></span></div>
       </div>
 
       <div class="card">
-        <div class="card-h">Processamento do microfone</div>
-        <label class="switch"><input id="pHighpass" type="checkbox" checked> Passa-alta <span class="dim">(corta zumbido/hum)</span></label>
-        <label class="switch"><input id="pComp" type="checkbox" checked> Compressor <span class="dim">(nivela a voz)</span></label>
-        <label class="switch"><input id="pGate" type="checkbox" checked> Noise gate <span class="dim">(corta ruído de fundo)</span></label>
-        <label class="switch"><input id="pRnnoise" type="checkbox"> Supressão de ruído IA <span class="dim">(RNNoise — mata teclado/ventilador até falando)</span></label>
-        <label class="field">Sensibilidade do gate
+        <div class="card-h" data-i18n="proc_title">Processamento do microfone</div>
+        <label class="switch"><input id="pHighpass" type="checkbox" checked> <span data-i18n="p_highpass">Passa-alta</span> <span class="dim" data-i18n="p_highpass_h">(corta zumbido/hum)</span></label>
+        <label class="switch"><input id="pComp" type="checkbox" checked> <span data-i18n="p_comp">Compressor</span> <span class="dim" data-i18n="p_comp_h">(nivela a voz)</span></label>
+        <label class="switch"><input id="pGate" type="checkbox" checked> <span data-i18n="p_gate">Noise gate</span> <span class="dim" data-i18n="p_gate_h">(corta ruído de fundo)</span></label>
+        <label class="switch"><input id="pRnnoise" type="checkbox"> <span data-i18n="p_rnnoise">Supressão de ruído IA</span> <span class="dim" data-i18n="p_rnnoise_h">(RNNoise — mata teclado/ventilador até falando)</span></label>
+        <label class="field"><span data-i18n="p_sens">Sensibilidade do gate</span>
           <div class="rowline"><input id="pSens" type="range" min="0" max="100" step="1" value="50"><span id="pSensVal" class="dim">50</span></div>
         </label>
         <div class="meter"><div id="meterFill" class="meter-fill"></div><div id="meterThr" class="meter-thr"></div></div>
-        <div class="dim" style="margin:-2px 0 12px">Falando, a barra passa do marcador (branco) → abre. Em silêncio, fica abaixo → corta.</div>
-        <label class="switch"><input id="pMonitor" type="checkbox"> 🎧 Ouvir meu microfone <span class="dim">(teste — use fone)</span></label>
+        <div class="dim" style="margin:-2px 0 12px" data-i18n="p_meter_hint">Falando, a barra passa do marcador (branco) → abre. Em silêncio, fica abaixo → corta.</div>
+        <label class="switch"><input id="pMonitor" type="checkbox"> <span data-i18n="p_monitor">🎧 Ouvir meu microfone</span> <span class="dim" data-i18n="p_monitor_h">(teste — use fone)</span></label>
       </div>
 
       <div class="card">
-        <div class="card-h">Servidor</div>
-        <label class="switch"><input id="cfgAutoDetect" type="checkbox"> Detectar servidor do jogo (automático)</label>
+        <div class="card-h" data-i18n="srv_title">Servidor</div>
+        <label class="switch"><input id="cfgAutoDetect" type="checkbox"> <span data-i18n="srv_autodetect">Detectar servidor do jogo (automático)</span></label>
         <div class="two">
-          <label class="field">Porta da voz <input id="cfgAutoPort" type="number" value="8765"></label>
-          <label class="field">Senha (auto) <input id="cfgAutoPassword" type="password" placeholder="vazio = sem senha"></label>
+          <label class="field"><span data-i18n="srv_port">Porta da voz</span> <input id="cfgAutoPort" type="number" value="8765"></label>
+          <label class="field"><span data-i18n="srv_passauto">Senha (auto)</span> <input id="cfgAutoPassword" type="password" data-i18n-ph="ph_passauto" placeholder="vazio = sem senha"></label>
         </div>
         <hr class="sep">
-        <div class="dim" style="margin-bottom:10px">Servidor manual (fallback)</div>
+        <div class="dim" style="margin-bottom:10px" data-i18n="srv_manual">Servidor manual (fallback)</div>
         <div class="rowline" style="margin-bottom:12px">
           <select id="cfgServerSel" style="flex:1"></select>
-          <button id="cfgAdd" class="mini">+ Novo</button>
-          <button id="cfgDel" class="mini">Remover</button>
+          <button id="cfgAdd" class="mini" data-i18n="srv_new">+ Novo</button>
+          <button id="cfgDel" class="mini" data-i18n="srv_remove">Remover</button>
         </div>
-        <label class="field">Nome <input id="cfgName" type="text" placeholder="OurWorld"></label>
-        <label class="field">Endereço <input id="cfgServer" type="text" placeholder="https://voz.seudominio.com"></label>
-        <label class="field">Senha <input id="cfgPassword" type="password" placeholder="VOICE_PASSWORD"></label>
-        <label class="field">Alcance da voz (metros) <input id="cfgRange" type="number" min="1" max="500" step="1" value="50"></label>
-        <label class="switch"><input id="cfgAuto" type="checkbox"> Conectar automaticamente ao entrar no jogo</label>
-        <div class="save-row"><span id="cfgSaved" class="hint"></span><button id="cfgSave" class="mini accent">Salvar</button></div>
+        <label class="field"><span data-i18n="srv_name">Nome</span> <input id="cfgName" type="text" placeholder="OurWorld"></label>
+        <label class="field"><span data-i18n="srv_addr">Endereço</span> <input id="cfgServer" type="text" placeholder="https://voz.seudominio.com"></label>
+        <label class="field"><span data-i18n="srv_pass">Senha</span> <input id="cfgPassword" type="password" placeholder="VOICE_PASSWORD"></label>
+        <label class="field"><span data-i18n="srv_range">Alcance da voz (metros)</span> <input id="cfgRange" type="number" min="1" max="500" step="1" value="50"></label>
+        <label class="switch"><input id="cfgAuto" type="checkbox"> <span data-i18n="srv_autoconnect">Conectar automaticamente ao entrar no jogo</span></label>
+        <div class="save-row"><span id="cfgSaved" class="hint"></span><button id="cfgSave" class="mini accent" data-i18n="srv_save">Salvar</button></div>
       </div>
 
     </div>
@@ -227,7 +228,7 @@
 
   <!-- LOG -->
   <div class="card">
-    <div class="card-h">Logs do sistema</div>
+    <div class="card-h" data-i18n="log_title">Logs do sistema</div>
     <div id="log"></div>
   </div>
 
@@ -237,8 +238,8 @@
   <span id="hudDot" class="sdot off"></span>
   <span id="hudTxt">Offline</span>
   <span class="hud-sep">·</span>
-  <b id="hudPlayers">0</b><span class="hud-lbl">players</span>
-  <button id="hudExpand" title="Abrir janela">⤢</button>
+  <b id="hudPlayers">0</b><span class="hud-lbl" data-i18n="hud_players">players</span>
+  <button id="hudExpand" data-i18n-title="hud_expand" title="Abrir janela">⤢</button>
 </div>
 <script src="app.js"></script>
 </body>

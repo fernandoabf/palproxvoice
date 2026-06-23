@@ -49,6 +49,77 @@ function sensToThreshold(s){ return Math.pow(10, (-25 - (s/100)*35) / 20); }
 let cfg = { servers: [], selected: 0, volume: 1.0, micDeviceId: '', outputDeviceId: '', autoConnect: true };
 
 const $ = id => document.getElementById(id);
+
+// ----- i18n (PT/EN; padrao = idioma do sistema; salvo em localStorage) -----
+const I18N = {
+  pt: {
+    win_min:'Diminuir (modo overlay)', win_close:'Fechar',
+    tagline:'Voz por proximidade no Palworld',
+    fb_msg:'⚠️ Não consegui conectar ao servidor', fb_config:'Configurar', fb_ignore:'Ignorar',
+    st_title:'Status do sistema', m_server:'Servidor', m_players:'Jogadores', m_channel:'Canal', ch_prox:'Proximidade',
+    btn_start:'🎙️ Iniciar voz de proximidade', btn_leave:'Desconectar',
+    st_off:'Offline', sub_off:'Palworld fechado ou voz desligada',
+    st_connecting:'Conectando…', sub_connecting:'estabelecendo conexão',
+    st_searching:'Procurando jogo', sub_searching:'conectado — entre num servidor',
+    st_on:'Conectado', sub_on:'voz de proximidade ativa',
+    mute_on:'🎤 Mic', mute_off:'🔇 Mic mutado', deaf_on:'🔊 Som', deaf_off:'🔇 Sem som',
+    lang:'🌐 Idioma / Language', audio:'Áudio', mic:'Microfone', vol_in:'Volume do microfone (entrada)',
+    out:'Saída de áudio', vol_out:'Volume de saída', refresh:'Atualizar dispositivos',
+    proc_title:'Processamento do microfone',
+    p_highpass:'Passa-alta', p_highpass_h:'(corta zumbido/hum)',
+    p_comp:'Compressor', p_comp_h:'(nivela a voz)',
+    p_gate:'Noise gate', p_gate_h:'(corta ruído de fundo)',
+    p_rnnoise:'Supressão de ruído IA', p_rnnoise_h:'(RNNoise — mata teclado/ventilador até falando)',
+    p_sens:'Sensibilidade do gate',
+    p_meter_hint:'Falando, a barra passa do marcador (branco) → abre. Em silêncio, fica abaixo → corta.',
+    p_monitor:'🎧 Ouvir meu microfone', p_monitor_h:'(teste — use fone)',
+    srv_title:'Servidor', srv_autodetect:'Detectar servidor do jogo (automático)',
+    srv_port:'Porta da voz', srv_passauto:'Senha (auto)', ph_passauto:'vazio = sem senha',
+    srv_manual:'Servidor manual (fallback)', srv_new:'+ Novo', srv_remove:'Remover',
+    srv_name:'Nome', srv_addr:'Endereço', srv_pass:'Senha', srv_range:'Alcance da voz (metros)',
+    srv_autoconnect:'Conectar automaticamente ao entrar no jogo', srv_save:'Salvar',
+    log_title:'Logs do sistema', hud_expand:'Abrir janela', hud_players:'players',
+  },
+  en: {
+    win_min:'Minimize (overlay mode)', win_close:'Close',
+    tagline:'Voice proximity for Palworld',
+    fb_msg:"⚠️ Couldn't connect to server", fb_config:'Configure', fb_ignore:'Ignore',
+    st_title:'System status', m_server:'Server', m_players:'Players', m_channel:'Channel', ch_prox:'Proximity',
+    btn_start:'🎙️ Start proximity voice', btn_leave:'Disconnect',
+    st_off:'Offline', sub_off:'Palworld closed or voice off',
+    st_connecting:'Connecting…', sub_connecting:'establishing connection',
+    st_searching:'Looking for game', sub_searching:'connected — join a server',
+    st_on:'Connected', sub_on:'proximity voice active',
+    mute_on:'🎤 Mic', mute_off:'🔇 Mic muted', deaf_on:'🔊 Sound', deaf_off:'🔇 Deafened',
+    lang:'🌐 Idioma / Language', audio:'Audio', mic:'Microphone', vol_in:'Microphone volume (input)',
+    out:'Audio output', vol_out:'Output volume', refresh:'Refresh devices',
+    proc_title:'Microphone processing',
+    p_highpass:'High-pass', p_highpass_h:'(cuts rumble/hum)',
+    p_comp:'Compressor', p_comp_h:'(levels the voice)',
+    p_gate:'Noise gate', p_gate_h:'(cuts background noise)',
+    p_rnnoise:'AI noise suppression', p_rnnoise_h:'(RNNoise — kills keyboard/fan even while talking)',
+    p_sens:'Gate sensitivity',
+    p_meter_hint:'While talking, the bar passes the marker (white) → opens. In silence, stays below → cuts.',
+    p_monitor:'🎧 Hear my microphone', p_monitor_h:'(test — use headphones)',
+    srv_title:'Server', srv_autodetect:'Detect game server (automatic)',
+    srv_port:'Voice port', srv_passauto:'Password (auto)', ph_passauto:'empty = no password',
+    srv_manual:'Manual server (fallback)', srv_new:'+ New', srv_remove:'Remove',
+    srv_name:'Name', srv_addr:'Address', srv_pass:'Password', srv_range:'Voice range (meters)',
+    srv_autoconnect:'Connect automatically when entering the game', srv_save:'Save',
+    log_title:'System log', hud_expand:'Open window', hud_players:'players',
+  },
+};
+let lang = localStorage.getItem('ppv_lang') || ((navigator.language || '').toLowerCase().startsWith('pt') ? 'pt' : 'en');
+function t(k){ return (I18N[lang] && I18N[lang][k]) || I18N.en[k] || k; }
+function applyI18n(){
+  document.documentElement.lang = lang;
+  document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = t(el.getAttribute('data-i18n')); });
+  document.querySelectorAll('[data-i18n-ph]').forEach(el => { el.setAttribute('placeholder', t(el.getAttribute('data-i18n-ph'))); });
+  document.querySelectorAll('[data-i18n-title]').forEach(el => { el.title = t(el.getAttribute('data-i18n-title')); });
+  try { refreshStatus(); } catch (_) {}
+  try { updateAudioBtns(); } catch (_) {}
+}
+function setLang(l){ lang = l; try { localStorage.setItem('ppv_lang', l); } catch (_) {} applyI18n(); }
 const RT = window.runtime || {}; // runtime do Wails (controle de janela)
 // log colorido com timestamp. level: 'ok' | 'warn' | 'err' | 'info'
 function log(m, level) {
@@ -118,10 +189,10 @@ function placePanner(p) {
 let connState = 'off'; // 'off' | 'connecting' | 'on'
 function refreshStatus() {
   let txt, cls, sub;
-  if (connState === 'off')             { txt='Offline';        cls='off';       sub='Palworld fechado ou voz desligada'; }
-  else if (connState === 'connecting') { txt='Conectando…';    cls='searching'; sub='estabelecendo conexão'; }
-  else if (!posFromGame)               { txt='Procurando jogo';cls='searching'; sub='conectado — entre num servidor'; }
-  else                                 { txt='Conectado';      cls='on';        sub='voz de proximidade ativa'; }
+  if (connState === 'off')             { txt=t('st_off');        cls='off';       sub=t('sub_off'); }
+  else if (connState === 'connecting') { txt=t('st_connecting'); cls='searching'; sub=t('sub_connecting'); }
+  else if (!posFromGame)               { txt=t('st_searching'); cls='searching'; sub=t('sub_searching'); }
+  else                                 { txt=t('st_on');        cls='on';        sub=t('sub_on'); }
   $('conn').textContent = txt;    $('conn').className = 'badge ' + cls;
   $('connTxt').textContent = txt; $('statusDot').className = 'sdot ' + cls;
   $('status').textContent = sub;
@@ -516,8 +587,8 @@ function applyVolume(v)   { masterVolume = v; applyOutput(); }
 function applyInputVol(v) { inputVol = v; applyInput(); }
 function updateAudioBtns() {
   const mm = $('muteMic'), df = $('deafen');
-  mm.textContent = micMuted ? '🔇 Mic mutado' : '🎤 Mic'; mm.classList.toggle('muted', micMuted);
-  df.textContent = deafened ? '🔇 Sem som' : '🔊 Som';   df.classList.toggle('muted', deafened);
+  mm.textContent = micMuted ? t('mute_off') : t('mute_on'); mm.classList.toggle('muted', micMuted);
+  df.textContent = deafened ? t('deaf_off') : t('deaf_on'); df.classList.toggle('muted', deafened);
 }
 function applyRange(m) { voiceRangeMeters = m; for (const id in peers) { const p = peers[id]; if (p.panner) p.panner.maxDistance = m; } }
 
@@ -616,6 +687,8 @@ $('leave').onclick = () => { wantConnected = false; clearTimeout(reconnectTimer)
   try {
     cfg = await window.go.main.App.GetConfig();
     if (!cfg.servers) cfg.servers = [];
+    $('cfgLang').value = lang; $('cfgLang').onchange = e => setLang(e.target.value);
+    applyI18n(); // traduz a UI pro idioma salvo/do sistema
     masterVolume = (cfg.volume == null) ? 1.0 : cfg.volume;
     $('cfgVolume').value = masterVolume; $('cfgVolumeVal').textContent = Math.round(masterVolume*100)+'%';
     inputVol = (cfg.inputVolume == null) ? 1.0 : cfg.inputVolume;
