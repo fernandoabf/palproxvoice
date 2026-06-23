@@ -11,6 +11,13 @@ infra.
 > [CHANGELOG.md](CHANGELOG.md) · desenho em [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 > · plano em [docs/ROADMAP.md](docs/ROADMAP.md).
 
+> 🎥 **Demo:** _(em breve — clipe de ~20s da voz por proximidade 3D; ouça de **fone** 🎧)_
+<!-- Ao gravar o clipe, salve em docs/demo.gif e descomente o bloco abaixo:
+<p align="center">
+  <img src="docs/demo.gif" alt="Voz por proximidade 3D no Palworld" width="680">
+</p>
+-->
+
 ## Como funciona
 
 Três peças. O jogo nunca fala com o servidor de voz direto — quem faz a ponte é o companion.
