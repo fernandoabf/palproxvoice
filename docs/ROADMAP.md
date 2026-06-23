@@ -91,33 +91,40 @@ Guard-rails do `verify` (senão bane jogador honesto):
 ## Backlog — canais de voz (aprendizado do concorrente PalVoice)
 
 O PalVoice tem **proximidade + global + guilda**; nós só temos proximidade (pool único).
-O pedido priorizado é o **canal de guilda GLOBAL**.
 
-### Canal de guilda (global) — _planejado_
+### Os 4 canais — _planejado_
 
-**Objetivo:** membros da **mesma guilda** se ouvem em **qualquer distância** (voz
-global entre a guilda), **por cima** da proximidade. Ex.: a galera espalhada pelo
-mapa continua se falando; quem não é da guilda só entra pela proximidade.
+Dois eixos: **quem ouve** (todos / só guilda) × **alcance** (proximidade / global):
 
-- **Mix com a proximidade:** a guilda toca num barramento **global** (sem atenuar
-  por distância — volume fixo, sem HRTF ou com leve pan opcional); não-guilda
-  continua no caminho 3D/proximidade. Toggle no companion pra mutar o canal global.
+| Canal | Quem ouve | Alcance | Áudio |
+|---|---|---|---|
+| **Proximidade** (aberta) | qualquer um perto | local | 3D/HRTF ← _é o que temos hoje_ |
+| **Global** (aberta) | todo o servidor | qualquer distância | fixo (sem atenuar) |
+| **Guilda — local** | só a guilda, quando perto | local | 3D/HRTF |
+| **Guilda — global** | só a guilda | qualquer distância | fixo (sem atenuar) |
+
+- **Jogador escolhe** qual canal usar (toggle no companion). A decidir: ouvir só um
+  por vez, ou empilhar (ex.: proximidade **+** guilda-global por cima — guilda num
+  barramento de volume fixo, não-guilda no caminho 3D).
+- **Servidor obriga/restringe** quais canais valem (política do admin via env). Ex.:
+  só proximidade; proximidade + guilda-global; desligar o global-aberto. O companion
+  só mostra/permite os canais liberados pelo servidor. _(prioridade do pedido)_
 - **De onde vem a guilda (a decidir):**
-  1. **REST** — checar se `/v1/api/...` expõe guild id por jogador (o `/players`
-     que medimos **não** trazia guilda; ver se há endpoint/campo). Se sim, o
-     servidor de voz agrupa por guild id → zero config.
+  1. **REST** — ver se a REST expõe guild id por jogador (o `/players` que medimos
+     **não** trazia; checar endpoint/campo). Se sim, o servidor agrupa por guild id → zero config.
   2. **mod** — ler o guild id in-game (probe, como userId/posição) e mandar no join.
-  3. **manual / código** — "canal de guilda" por um código compartilhado, desacoplado
-     da guilda do jogo (mais simples; bom fallback enquanto 1/2 não estão prontos).
-- **Servidor:** o SFU já faz broadcast; é taguear o áudio por **canal** (proximidade
-  vs guilda-global) e rotear. Encaixa na mesma base agnóstica da V1.5.
-- **Anti-spoof:** entrar numa guilda-global de quem você não é membro é um vetor —
-  validar a associação pela fonte autoritativa (REST/mod), não pelo que o cliente diz.
+  3. **manual / código** — canal por código compartilhado, desacoplado da guilda do
+     jogo (mais simples; bom fallback enquanto 1/2 não estão prontos).
+- **Servidor (SFU):** já faz broadcast; é taguear o áudio por **canal** e rotear por
+  quem-pode-ouvir. Encaixa na base agnóstica da V1.5.
+- **Anti-spoof:** entrar numa guilda/global de quem não é vetor de bisbilhotice —
+  validar a associação (guilda, e o "está mesmo no servidor") pela fonte autoritativa
+  (REST/mod), nunca pelo que o cliente afirma.
 
-### Outros canais (depois, menor prioridade)
+### Outros (depois, menor prioridade)
 
-- **Global (push-to-talk)** — falar pra todo mundo do servidor com uma tecla.
 - **Party/grupo** — canal por código pra um subconjunto, sem ser a guilda inteira.
+- **Push-to-talk** por canal (ex.: PTT pro global, voz aberta na proximidade).
 
 ## Decisões travadas
 
