@@ -47,13 +47,23 @@ echo "[ppv-v2] 4/5 preparando Proton + feed compartilhado..."
 export STEAM_COMPAT_CLIENT_INSTALL_PATH="${STEAM_COMPAT_CLIENT_INSTALL_PATH:-/root/.steam}"
 export STEAM_COMPAT_DATA_PATH="${STEAM_COMPAT_DATA_PATH:-$PAL_DIR/compatdata/$APPID}"
 PROTON="${PROTON:-/proton/proton}"
-mkdir -p "$STEAM_COMPAT_DATA_PATH" "$STEAM_COMPAT_CLIENT_INSTALL_PATH" "$FEED_DIR"
-# semeia o prefixo do Wine (1ª vez)
-if [ ! -d "$STEAM_COMPAT_DATA_PATH/pfx" ]; then
-  cp -r "$(dirname "$PROTON")/files/share/default_pfx" "$STEAM_COMPAT_DATA_PATH/pfx" 2>/dev/null || true
+mkdir -p "$STEAM_COMPAT_CLIENT_INSTALL_PATH/steam" "$STEAM_COMPAT_CLIENT_INSTALL_PATH/root" "$FEED_DIR"
+
+# IMPORTANTE: NAO copiar default_pfx na mao. Isso deixa o prefixo meio-inicializado
+# (a pasta pfx existe mas sem os arquivos de controle 'version'/'tracked_files') e o
+# Proton crasha no upgrade: FileNotFoundError .../compatdata/2394010/tracked_files.
+# Deixa o PROTON criar o prefixo do zero com um boot inicial; so depois faz o symlink.
+if [ ! -f "$STEAM_COMPAT_DATA_PATH/tracked_files" ]; then
+  # limpa prefixo meio-inicializado de tentativa anterior (o pfx fica no volume e o
+  # Proton crasharia de novo no upgrade). So o prefixo Wine, NAO o jogo nem os saves.
+  rm -rf "$STEAM_COMPAT_DATA_PATH"
+  mkdir -p "$STEAM_COMPAT_DATA_PATH"
+  echo "[ppv-v2]   inicializando prefixo Proton (1a vez; cria pfx + tracked_files)..."
+  "$PROTON" run wineboot --init || true   # setup_prefix roda ANTES do cmd e ja cria tudo
 fi
-# o mod escreve em C:\Users\Public (Wine) -> aponta esse dir pro volume /feed,
-# assim o container do voz lê /feed/palproxvoice_players.txt
+
+# feed: o mod escreve em C:\Users\Public (Wine). Com o prefixo ja criado, troca esse
+# dir por um symlink pro volume /feed -> o container do voz le o mesmo arquivo.
 PUBDIR="$STEAM_COMPAT_DATA_PATH/pfx/drive_c/users/Public"
 mkdir -p "$(dirname "$PUBDIR")"
 rm -rf "$PUBDIR" && ln -sfn "$FEED_DIR" "$PUBDIR"
