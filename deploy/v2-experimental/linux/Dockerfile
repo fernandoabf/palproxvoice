@@ -8,15 +8,15 @@ ARG GE_PROTON=GE-Proton9-20
 
 # python3 = OBRIGATORIO: o launcher do Proton e' um script Python (sem ele:
 #   "/usr/bin/env: 'python3': No such file or directory").
-# SEM xvfb de proposito: os servers Palworld-sob-Proton comprovados rodam headless puro;
-#   com GuiConsole desligado nao ha janela, e um X sem GLX faz o Proton tentar o stack
-#   DXVK/Vulkan e TRAVAR no boot (descoberto na pratica). Rodamos headless + WineD3D.
+# xvfb/xauth = X virtual: NA PRATICA, com display o PalServer chegou ate o FTcpListener;
+#   SEM display (+ d3d off) ele SAI cedo (RHI falha). Entao damos um X ao Wine.
 # Deps do wine headless do GE-Proton (alinhado aos dockers que comprovadamente sobem,
 # que NAO usam slim): freetype/fontconfig/fonts (Slate/UE), gnutls (TLS), nss/nspr,
 # libgl1-mesa-dri (GL software), winbind (NTLM), cabextract/xdg-user-dirs (prefix),
 # procps (ps p/ debug). lib32* porque o wine roda 32 e 64 bits.
 RUN dpkg --add-architecture i386 && apt-get update && apt-get install -y --no-install-recommends \
       python3 locales procps \
+      xvfb xauth \
       curl ca-certificates unzip tar xz-utils zstd cabextract xdg-user-dirs winbind \
       lib32gcc-s1 libgcc-s1 lib32stdc++6 \
       libfreetype6 libfreetype6:i386 libfontconfig1 fontconfig fonts-liberation fonts-dejavu-core \
