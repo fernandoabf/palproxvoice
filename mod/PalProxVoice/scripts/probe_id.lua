@@ -1,16 +1,42 @@
--- PalProxVoice — PROBE de identidade (TEMPORARIO)
--- Objetivo: descobrir como ler, no cliente, o id do player local que casa com a
--- REST do servidor dedicado (playerId "61191836...0" = FGuid; userId "gdk_/steam_").
--- Tenta varios acessadores e ESCREVE o que funcionar em C:\Users\Public\ppv_id.txt.
--- Continua escrevendo a posicao normal (nao quebra a voz enquanto testa).
+-- PalProxVoice — PROBE de identidade SEGURO / INCREMENTAL (TEMPORARIO)
+-- ====================================================================
+-- POR QUE ESTE ARQUIVO E' DIFERENTE DO PROBE ANTERIOR:
+--   pcall NAO protege contra crash NATIVO do UE4SS. Quando um acessador
+--   "ruim" (:ToString(), GetUniqueId(), GetFullName(), ou struct encadeada
+--   num objeto que nao suporta) toca o C++ da engine, o processo INTEIRO
+--   morre — o pcall nunca chega a capturar nada. O probe antigo tentava ~15
+--   acessadores numa tacada so, entao 1 deles fatal derrubava tudo e voce
+--   nem sabia qual foi.
 --
--- COMO USAR: substitua o main.lua instalado por este arquivo (renomeie p/ main.lua),
--- reinicie o jogo, entre num servidor. Depois leia o ppv_id.txt e RESTAURE o main.lua.
+-- ESTRATEGIA SEGURA (este arquivo):
+--   1) Testa UM acessador "arriscado" por SESSAO de jogo (1 por restart).
+--   2) Marca no disco "TENTANDO <nome>" ANTES de tocar no acessador.
+--      -> se o jogo crashar, na proxima abertura o arquivo mostra qual era;
+--         ele e' marcado FATAL e PULADO automaticamente.
+--   3) Acessadores "safe" (leitura de propriedade simples) sao agrupados na
+--      MESMA sessao; so os arriscados forcam restart.
+--   4) Os acessadores que JA crasharam (ToString/GetUniqueId/GetFullName)
+--      foram REMOVIDOS — nao adianta re-testar o que ja sabemos ser fatal.
+--   5) A posicao normal continua sendo escrita -> a voz NAO quebra durante o teste.
+--
+-- COMO USAR:
+--   - Substitua o main.lua instalado por este arquivo (renomeie p/ main.lua).
+--     Caminho ativo (WinGDK/Game Pass):
+--       ...\Pal\Binaries\WinGDK\Mods\PalProxVoice\scripts\main.lua
+--   - Abra o jogo, entre num servidor, espere ~5s (estabilizacao).
+--   - Leia os resultados em  C:\Users\Public\ppv_id.txt
+--   - Se o console pedir "REINICIE", feche e reabra o jogo p/ o proximo acessador.
+--   - Quando aparecer "PROBE COMPLETO", RESTAURE o main.lua original.
+--   - Pra recomecar do zero: apague C:\Users\Public\ppv_probe_state.txt e ppv_id.txt
+-- ====================================================================
 local UEHelpers = require("UEHelpers")
-local OUT = (os.getenv("PUBLIC") or "C:\\Users\\Public") .. "\\palproxvoice_pos.txt"
-local IDOUT = (os.getenv("PUBLIC") or "C:\\Users\\Public") .. "\\ppv_id.txt"
+
+local PUB    = (os.getenv("PUBLIC") or "C:\\Users\\Public")
+local OUT    = PUB .. "\\palproxvoice_pos.txt"   -- posicao normal (voz continua viva)
+local STATE  = PUB .. "\\ppv_probe_state.txt"    -- maquina: status de cada acessador
+local RESULT = PUB .. "\\ppv_id.txt"             -- humano: resultados acumulados
 local RATE_MS = 50
-local idDone = false
+local STABILIZE_TICKS = 100  -- ~5s com player valido antes de sondar (evita load/transicao)
 
 local function try(fn)
     local ok, res = pcall(fn)
@@ -18,107 +44,209 @@ local function try(fn)
     return nil
 end
 
--- formata qualquer coisa em string legivel (numero/hex p/ inteiros)
-local function fmt(v)
-    if v == nil then return nil end
-    local t = type(v)
-    if t == "number" then
-        if v == math.floor(v) and v >= 0 then
-            return string.format("%d (0x%X)", v, v)
-        end
-        return tostring(v)
-    end
-    if t == "boolean" or t == "string" then return tostring(v) end
-    -- userdata (UObject/struct): tenta :ToString(), :type(), GetFullName()
-    local s = try(function() return v:ToString() end)
-    if s then return "ToString=" .. tostring(s) end
-    local fn = try(function() return v:GetFullName() end)
-    if fn then return "FullName=" .. tostring(fn) end
-    return "userdata(" .. tostring(v) .. ")"
+-- ---- lista ORDENADA de acessadores -------------------------------------
+-- safe=true  -> leitura simples; varios na mesma sessao.
+-- safe=false -> ARRISCADO; UM por sessao (forca restart depois).
+-- cada fn retorna uma STRING (resultado) ou nil.
+local function buildProbes(ps)
+    return {
+        { name = "PlayerId", safe = true, fn = function()
+            local v = ps.PlayerId
+            if v == nil then return nil end
+            return string.format("%s", tostring(v))
+        end },
+
+        { name = "PlayerNamePrivate", safe = true, fn = function()
+            local v = ps.PlayerNamePrivate
+            if v == nil then return nil end
+            return tostring(v)
+        end },
+
+        -- primeiro toque na struct IndividualHandleId: isolado.
+        { name = "IndividualHandleId.present", safe = false, fn = function()
+            local h = ps.IndividualHandleId
+            if h == nil then return nil end
+            return "presente (userdata)"
+        end },
+
+        -- ALVO PRINCIPAL: FGuid do player (casa com playerId da REST "6119...").
+        { name = "IndividualHandleId.PlayerUId", safe = false, fn = function()
+            local h = ps.IndividualHandleId
+            if h == nil then return nil end
+            local g = h.PlayerUId
+            if g == nil then return nil end
+            local a = g.A
+            if a == nil then return nil end
+            local b, c, d = g.B or 0, g.C or 0, g.D or 0
+            -- FGuid -> 32 hex (A,B,C,D = 4x uint32). Compara com playerId da REST.
+            return string.format("%08X%08X%08X%08X  (A=%s B=%s C=%s D=%s)",
+                a, b, c, d, tostring(a), tostring(b), tostring(c), tostring(d))
+        end },
+
+        { name = "IndividualHandleId.InstanceId", safe = false, fn = function()
+            local h = ps.IndividualHandleId
+            if h == nil then return nil end
+            local g = h.InstanceId
+            if g == nil then return nil end
+            local a = g.A
+            if a == nil then return nil end
+            local b, c, d = g.B or 0, g.C or 0, g.D or 0
+            return string.format("%08X%08X%08X%08X", a, b, c, d)
+        end },
+    }
 end
 
--- escreve identidade uma unica vez quando achar player valido
-local function probeIdentity(pc, pawn)
-    local lines = {}
-    local function add(label, getter)
-        local v = try(getter)
-        if v ~= nil then
-            local f = fmt(v)
-            if f ~= nil then lines[#lines + 1] = label .. " = " .. f end
-        end
-    end
+local ORDER = {
+    "PlayerId",
+    "PlayerNamePrivate",
+    "IndividualHandleId.present",
+    "IndividualHandleId.PlayerUId",
+    "IndividualHandleId.InstanceId",
+}
 
-    local ps = try(function() return pc.PlayerState end)
-        or try(function() return pc:GetPlayerState() end)
-        or try(function() return pawn.PlayerState end)
+-- ---- estado persistido --------------------------------------------------
+local status = {} -- name -> PENDING | TRYING | DONE | NIL | FATAL
 
-    add("ps.present", function() return ps ~= nil end)
-    if ps then
-        add("ps.PlayerId", function() return ps.PlayerId end)
-        add("ps.PlayerNamePrivate", function() return ps.PlayerNamePrivate end)
-        add("ps:GetPlayerName()", function() return ps:GetPlayerName() end)
-        -- Palworld: IndividualHandleId (FPalInstanceID) -> PlayerUId / InstanceId (FGuid)
-        add("ps.IndividualHandleId", function() return ps.IndividualHandleId end)
-        add("ps.IndividualHandleId.PlayerUId", function() return ps.IndividualHandleId.PlayerUId end)
-        add("PlayerUId.A", function() return ps.IndividualHandleId.PlayerUId.A end)
-        add("PlayerUId.B", function() return ps.IndividualHandleId.PlayerUId.B end)
-        add("PlayerUId.C", function() return ps.IndividualHandleId.PlayerUId.C end)
-        add("PlayerUId.D", function() return ps.IndividualHandleId.PlayerUId.D end)
-        add("ps.IndividualHandleId.InstanceId", function() return ps.IndividualHandleId.InstanceId end)
-        add("InstanceId.A", function() return ps.IndividualHandleId.InstanceId.A end)
-        -- candidatos diretos
-        add("ps.PlayerUId", function() return ps.PlayerUId end)
-        add("ps.UserId", function() return ps.UserId end)
-        add("ps:GetUniqueId()", function() return ps:GetUniqueId() end)
-        add("ps.UniqueId", function() return ps.UniqueId end)
+local function saveState()
+    local f = io.open(STATE, "w")
+    if not f then return end
+    for _, n in ipairs(ORDER) do
+        f:write(n .. "|" .. (status[n] or "PENDING") .. "\n")
     end
-    -- pelo PlayerController
-    add("pc:GetUniqueNetIdAsString()", function() return pc:GetUniqueNetIdAsString() end)
-
-    if #lines == 0 then return false end
-    local f = io.open(IDOUT, "w")
-    if f then
-        f:write("[PalProxVoice probe de identidade]\n")
-        f:write(table.concat(lines, "\n"))
-        f:write("\n")
-        f:close()
-        print("[PalProxVoice] PROBE escrito em " .. IDOUT .. "\n")
-        return true
-    end
-    return false
+    f:close()
 end
 
-local function readpos()
+local function appendResult(text)
+    local f = io.open(RESULT, "a")
+    if f then f:write(text .. "\n"); f:close() end
+end
+
+local function loadState()
+    for _, n in ipairs(ORDER) do status[n] = "PENDING" end
+    local f = io.open(STATE, "r")
+    if not f then return end
+    for line in f:lines() do
+        local n, s = line:match("^(.-)|(.+)$")
+        if n and status[n] ~= nil then status[n] = s end
+    end
+    f:close()
+end
+
+-- qualquer TRYING encontrado na abertura = a sessao anterior CRASHOU ali.
+local function resolveCrash()
+    local crashed = false
+    for _, n in ipairs(ORDER) do
+        if status[n] == "TRYING" then
+            status[n] = "FATAL"
+            crashed = true
+            appendResult("[" .. n .. "] = FATAL (crashou o jogo nesta tentativa) -> pulando")
+            print("[PalProxVoice] '" .. n .. "' crashou na sessao anterior -> marcado FATAL\n")
+        end
+    end
+    if crashed then saveState() end
+end
+
+local function nextTarget()
+    for _, n in ipairs(ORDER) do
+        if status[n] == "PENDING" then return n end
+    end
+    return nil
+end
+
+-- ---- runtime ------------------------------------------------------------
+local probeComplete = false
+local passDone = false   -- ja rodou a pass NESTA sessao
+local stable = 0
+
+local function runProbePass(ps)
+    local list = buildProbes(ps)
+    local byName = {}
+    for _, p in ipairs(list) do byName[p.name] = p end
+
+    while true do
+        local target = nextTarget()
+        if not target then
+            probeComplete = true
+            appendResult("=== PROBE COMPLETO. Restaure o main.lua original. ===")
+            print("[PalProxVoice] PROBE COMPLETO -> restaure o main.lua original.\n")
+            saveState()
+            return
+        end
+
+        local p = byName[target]
+        -- marca TRYING e PERSISTE *antes* de tocar no acessador (crash aponta o culpado)
+        status[target] = "TRYING"
+        saveState()
+        print("[PalProxVoice] sondando: " .. target .. " ...\n")
+
+        local res = try(p.fn)
+        if res == nil then
+            status[target] = "NIL"
+            appendResult("[" .. target .. "] = nil (nao existe / sem valor)")
+        else
+            status[target] = "DONE"
+            appendResult("[" .. target .. "] = " .. tostring(res))
+            print("[PalProxVoice] " .. target .. " = " .. tostring(res) .. "\n")
+        end
+        saveState()
+
+        if not p.safe then
+            print("[PalProxVoice] '" .. target .. "' OK. REINICIE o jogo p/ sondar o proximo.\n")
+            return -- arriscado resolvido: fecha a sessao aqui
+        end
+        -- safe: segue pro proximo no mesmo restart
+    end
+end
+
+local function getPlayer()
     local pc = try(function() return UEHelpers:GetPlayerController() end)
-    if not pc then return nil end
-    if not try(function() return pc:IsValid() end) then return nil end
+    if not pc then return nil, nil end
+    if not try(function() return pc:IsValid() end) then return nil, nil end
     local pawn = try(function() return pc.Pawn end)
-    if not pawn then return nil end
-    if not try(function() return pawn:IsValid() end) then return nil end
+    if not pawn then return nil, nil end
+    if not try(function() return pawn:IsValid() end) then return nil, nil end
+    return pc, pawn
+end
 
-    if not idDone then idDone = probeIdentity(pc, pawn) end -- <- probe (uma vez)
-
+local function writePos(pc, pawn)
     local loc = try(function() return pawn:K2_GetActorLocation() end)
-    if not loc then return nil end
-    local x, y, z = loc.X, loc.Y, loc.Z
-    if not (x and y and z) then return nil end
+    if not loc or not (loc.X and loc.Y and loc.Z) then return end
     local rot = try(function() return pc:GetControlRotation() end)
         or try(function() return pawn:K2_GetActorRotation() end)
     local yaw = (rot and rot.Yaw) or 0
-    return string.format("%.1f,%.1f,%.1f,%.1f", x, y, z, yaw)
+    local f = io.open(OUT, "w")
+    if f then f:write(string.format("%.1f,%.1f,%.1f,%.1f", loc.X, loc.Y, loc.Z, yaw)); f:close() end
 end
+
+loadState()
+resolveCrash()
 
 LoopAsync(RATE_MS, function()
     ExecuteInGameThread(function()
         local ok, err = pcall(function()
-            local line = readpos()
-            if not line then return end
-            local f = io.open(OUT, "w")
-            if f then f:write(line); f:close() end
+            local pc, pawn = getPlayer()
+            if not pc or not pawn then
+                stable = 0 -- instavel: zera o contador de estabilizacao
+                return
+            end
+
+            writePos(pc, pawn) -- voz continua funcionando durante o probe
+
+            if probeComplete or passDone then return end
+            stable = stable + 1
+            if stable < STABILIZE_TICKS then return end
+
+            local ps = try(function() return pc.PlayerState end)
+                or try(function() return pc:GetPlayerState() end)
+                or try(function() return pawn.PlayerState end)
+            if not ps then return end
+
+            passDone = true
+            runProbePass(ps)
         end)
         if not ok then print("[PalProxVoice] erro: " .. tostring(err) .. "\n") end
     end)
     return false
 end)
 
-print("[PalProxVoice] PROBE de identidade carregado.\n")
+print("[PalProxVoice] PROBE SEGURO carregado. Resultados -> " .. RESULT .. "\n")

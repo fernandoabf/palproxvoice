@@ -77,8 +77,8 @@ func main() {
 	api = webrtc.NewAPI(webrtc.WithSettingEngine(se))
 
 	initAntispoof() // V1.5: liga o poll da REST se PPV_AUTH_MODE=verify|strict
+	initV2()        // V2 (experimental): feed do mod server-side se PPV_PLAYERS_FILE setado
 
-	http.Handle("/", http.FileServer(http.Dir("./web"))) // serve o cliente de teste
 	http.HandleFunc("/ws", websocketHandler)
 
 	// renegociacao periodica de seguranca
@@ -220,6 +220,21 @@ func websocketHandler(w http.ResponseWriter, r *http.Request) {
 			var ans webrtc.SessionDescription
 			if json.Unmarshal([]byte(m.Data), &ans) == nil {
 				_ = pc.SetRemoteDescription(ans)
+			}
+		case "identify":
+			// anti-spoof: o FGuid do player replica ~6s depois de entrar no mundo, mas
+			// o companion auto-conecta em ~50ms -> o auth costuma vir com user vazio.
+			// Aqui o companion completa a identidade quando o id fica pronto. self.userID
+			// so e lido nesta mesma goroutine (case "pos" -> resolveOutgoingPos), sem corrida.
+			if m.User != "" {
+				self.userID = m.User
+				// identidade mudou no meio da sessao -> re-deriva a reconciliacao do
+				// zero contra o novo ancora (nao carrega divergeN/lastX do match por IP).
+				self.divergeN, self.hasLast = 0, false
+				if isBlocked(self.userID, peerIP) { // pode ter sido bloqueado (politica B)
+					_ = conn.WriteJSON(&wsMsg{Event: "error", Data: "blocked"})
+					return
+				}
 			}
 		case "pos":
 			// anti-spoof: reconcilia com a REST (off=passa direto). out = o que

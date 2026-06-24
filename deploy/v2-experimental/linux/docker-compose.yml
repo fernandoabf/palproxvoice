@@ -1,0 +1,57 @@
+# PalProxVoice V2 (EXPERIMENTAL) — servidor Palworld MODADO (Proton+UE4SS) + voz.
+# ⚠️ NÃO TESTADO. Rode num host DESCARTÁVEL. Portas DESLOCADAS pra coexistir com teu
+# Palworld de produção (game 8311, query 27115, REST 8312, RCON 25675; voz 8766 + UDP 50100-50110).
+#
+# Suba daqui:  docker compose -f deploy/v2-experimental/linux/docker-compose.yml up -d --build
+# O servidor de jogo escreve o feed em /feed (= C:\Users\Public no Wine); o voz lê dali.
+services:
+  palworld-v2:
+    build:
+      context: .                      # usa o Dockerfile + entrypoint.sh desta pasta
+    container_name: palworld-v2
+    restart: unless-stopped
+    stop_grace_period: 30s
+    environment:
+      PORT: "8311"
+      QUERY_PORT: "27115"
+      REST_PORT: "8312"
+      RCON_PORT: "25675"
+      ADMIN_PASSWORD: "${V2_ADMIN_PASSWORD:-trocar-senha-forte}"
+    ports:
+      - "0.0.0.0:8311:8311/udp"       # jogo (porta DESLOCADA)
+      - "0.0.0.0:27115:27115/udp"     # query (DESLOCADA)
+      # REST 8312 NÃO publicada -> o voz fala com ela só por dentro da rede
+    volumes:
+      - palworld_v2_data:/palworld
+      # o mod deste repo (read-only):
+      - ../../../mod-server/PalProxVoiceServer:/mods/PalProxVoiceServer:ro
+      - ppv_feed:/feed                # feed compartilhado com o voz
+    networks: [palprox-v2]
+
+  voice-v2:
+    build:
+      context: ../../../server        # o servidor de voz deste repo
+    container_name: palproxvoice-v2
+    restart: unless-stopped
+    environment:
+      HTTP_PORT: "8080"               # interno (mapeado pra 8766 no host)
+      PUBLIC_IP: "${PUBLIC_IP:-}"     # IP público do host (pro áudio UDP)
+      VOICE_PASSWORD: "${VOICE_PASSWORD:-}"
+      SERVER_NAME: "OurWorld V2 TEST"
+      # V2: consome o feed autoritativo do mod server-side
+      PPV_PLAYERS_FILE: "/feed/palproxvoice_players.txt"
+      PPV_FEED_POLL_MS: "100"
+    ports:
+      - "0.0.0.0:8766:8080"                 # sinalização ws (porta DESLOCADA)
+      - "0.0.0.0:50100-50110:50000-50010/udp" # mídia (faixa DESLOCADA)
+    volumes:
+      - ppv_feed:/feed:ro             # lê o feed que o servidor de jogo escreve
+    networks: [palprox-v2]
+
+volumes:
+  palworld_v2_data:
+  ppv_feed:
+
+networks:
+  palprox-v2:
+    name: palprox-v2

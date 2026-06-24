@@ -1,0 +1,48 @@
+# EXEMPLO / REFERENCIA — NAO e' um deploy real.
+# Mostra como um servidor Palworld dedicado entra no anti-spoof do PalProxVoice:
+#   - REST API LIGADA  -> o voz le posicao/identidade dos jogadores POR DENTRO
+#   - na MESMA rede docker (palprox) que o voz -> a REST de admin NUNCA fica exposta
+#
+# Ordem: suba o voz PRIMEIRO (docker-compose.yml cria a rede "palprox"), depois este.
+#   docker compose up -d                                   # voz (cria a rede)
+#   docker compose -f docker-compose.palworld.example.yml up -d
+# No .env do voz: PPV_AUTH_MODE=verify, PPV_REST_URL=http://palworld:8212,
+#                 PPV_REST_PASS=<o mesmo ADMIN_PASSWORD abaixo>
+services:
+  palworld:
+    image: thijsvanloef/palworld-server-docker:latest
+    container_name: palworld
+    restart: unless-stopped
+    stop_grace_period: 30s
+    ports:
+      - "0.0.0.0:8211:8211/udp"   # jogo
+      - "0.0.0.0:27015:27015/udp" # query
+      # OBS: a 8212 (REST) NAO e' publicada -> so o voz alcanca, por dentro da rede.
+    environment:
+      PUID: 1000
+      PGID: 1000
+      TZ: "America/Fortaleza"
+      SERVER_NAME: "Meu Servidor"
+      PLAYERS: 16
+      PORT: 8211
+      QUERY_PORT: 27015
+      SERVER_PASSWORD: "troque-isto"
+      ADMIN_PASSWORD: "troque-por-uma-senha-forte"   # = PPV_REST_PASS no .env do voz
+      # REST API: o anti-spoof do voz le isso por dentro da rede palprox.
+      REST_API_ENABLED: true
+      REST_API_PORT: 8212
+      MULTITHREADING: true
+    volumes:
+      - palworld_data:/palworld
+    networks:
+      - palprox
+
+volumes:
+  palworld_data:
+
+# entra na rede criada pelo docker-compose.yml do voz (external -> tem que existir antes).
+# o voz alcanca a REST em http://palworld:8212 SEM expor a porta.
+networks:
+  palprox:
+    external: true
+    name: palprox

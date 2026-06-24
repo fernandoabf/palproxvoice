@@ -22,24 +22,34 @@ services:
       # off    = confia na posicao do cliente (legado).
       # verify = reconcilia com a REST; spoof sustentado -> ignora a mentira (politica A).
       # strict = posicao sempre da REST.
-      # verify/strict precisam ALCANCAR a REST do Palworld POR DENTRO da rede docker
-      # (a REST e' API de ADMIN -> NUNCA exponha publica). Veja a nota de rede abaixo.
+      # FUNCIONA DOS 2 JEITOS (o codigo aceita qualquer URL):
+      #   INTERNO (recomendado): http://<service-do-palworld>:8212  (mesma rede docker,
+      #            REST nunca exposta). Ex.: http://palworld:8212
+      #   EXTERNO (so se precisar): https://seu-dominio  (REST atras de proxy/Cloudflare;
+      #            so com SENHA FORTE -> fica publica). Ver docs/ANTI-SPOOF-DEPLOY.md.
       PPV_AUTH_MODE: "${PPV_AUTH_MODE:-off}"
-      PPV_REST_URL: "${PPV_REST_URL:-}"        # ex.: http://palworld-server:8212
+      PPV_REST_URL: "${PPV_REST_URL:-}"        # ex.: http://palworld:8212
       PPV_REST_USER: "${PPV_REST_USER:-admin}"
       PPV_REST_PASS: "${PPV_REST_PASS:-}"      # = ADMIN_PASSWORD do servidor Palworld
       PPV_POS_TOL_CM: "${PPV_POS_TOL_CM:-5000}"   # tolerancia de divergencia (cm)
       PPV_DIVERGE_POLLS: "${PPV_DIVERGE_POLLS:-4}" # polls seguidos divergindo p/ agir
       PPV_BAN: "${PPV_BAN:-0}"                  # 1 = politica B (bloqueia no nivel da voz)
 
-# NOTA DE REDE (verify/strict): o container de voz precisa resolver "palworld-server"
-# (ou o nome do service do Palworld) na MESMA rede docker. Se o Palworld roda em outro
-# compose/projeto Dokploy, crie uma rede externa e ligue os dois nela. Ex.:
-#   docker network create ourworld
-#   # nos DOIS compose: adicione
-#   #   networks: [ourworld]
-#   # e no fim do arquivo:
-#   # networks:
-#   #   ourworld:
-#   #     external: true
-# Assim o voice fala http://palworld-server:8212 SEM expor a REST pra internet.
+      # ---- V2 (EXPERIMENTAL) — posicao+yaw autoritativos do mod SERVER-SIDE ----
+      # Liga so se setar PPV_PLAYERS_FILE: caminho (DENTRO do container do voz) pro
+      # feed que o mod UE4SS do servidor escreve ("fguid,x,y,z,yaw" por linha). O voz
+      # e o servidor de jogo precisam COMPARTILHAR esse arquivo (volume docker comum).
+      # Tem prioridade sobre a REST quando o peer esta no feed. Precisa de UE4SS no
+      # servidor (ver mod-server/). Off por padrao.
+      PPV_PLAYERS_FILE: "${PPV_PLAYERS_FILE:-}"     # ex.: /shared/palproxvoice_players.txt
+      PPV_FEED_POLL_MS: "${PPV_FEED_POLL_MS:-100}"  # com que frequencia o voz le o feed
+    networks:
+      - palprox
+
+# REDE: ESTE compose CRIA a rede "palprox" (nome fixo, sem prefixo do projeto).
+# O compose do Palworld entra nela como EXTERNAL (networks: [palprox] + external: true).
+# Por isso suba o voz PRIMEIRO (cria a rede), depois o Palworld.
+# Assim o voz fala http://<service-do-palworld>:8212 POR DENTRO — REST nunca publica.
+networks:
+  palprox:
+    name: palprox

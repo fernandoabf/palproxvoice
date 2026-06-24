@@ -322,7 +322,7 @@ if (window.runtime && window.runtime.EventsOn) {
 } else { log(t('lg_no_wails')); }
 
 // ----- WebSocket / WebRTC -----
-let ws = null, pc = null, posTimer = null, gotHello = false;
+let ws = null, pc = null, posTimer = null, identifyTimer = null, gotHello = false;
 // reconexao automatica em QUEDA DE REDE (internet ruim/instavel)
 let wantConnected = false, wasEverConnected = false, lastServer = null, reconnectTimer = null, reconnectDelay = 2000;
 
@@ -455,7 +455,36 @@ async function start(s) {
   pc.onicecandidate = e => { if (e.candidate) ws.send(JSON.stringify({ event: 'candidate', data: JSON.stringify(e.candidate) })); };
 
   ws.onopen = async () => {
-    ws.send(JSON.stringify({ event: 'auth', data: s.password }));
+    const sock = ws; // fixa o socket desta conexao: onopen e' async e o ws (module-level)
+                     // pode ser trocado/anulado por stop()/reconnect durante os awaits.
+    // anti-spoof: manda o FGuid do player (escrito pelo mod) no auth. O servidor
+    // correlaciona com a REST do Palworld. Vazio = ainda nao entrou no mundo ->
+    // o servidor cai pra correlacao por IP+proximidade. Auth e' SEMPRE a 1a msg.
+    let uid = '';
+    try { uid = await window.go.main.App.PlayerID(); } catch (_) {}
+    if (sock.readyState !== 1) return; // desconectou durante o await -> aborta sem erro
+    sock.send(JSON.stringify({ event: 'auth', data: s.password, user: uid || '' }));
+    // o FGuid demora ~6s pra replicar apos entrar no mundo, mas o auto-connect
+    // dispara em ~50ms -> o auth quase sempre vai com user vazio. Entao, ate ter um
+    // id, fica relendo e manda um {identify} quando ele aparecer (uma vez). Tambem
+    // cobre o caso de conectar a voz ANTES de entrar no mundo.
+    if (identifyTimer) { clearInterval(identifyTimer); identifyTimer = null; }
+    let sentUser = uid || '';
+    if (!sentUser) {
+      // handle local (h): o callback so mexe no PROPRIO timer/socket, nunca no de
+      // outra conexao (evita um callback atrasado matar o timer de um reconnect).
+      const h = setInterval(async () => {
+        if (sock.readyState !== 1) { clearInterval(h); if (identifyTimer === h) identifyTimer = null; return; }
+        let id = '';
+        try { id = await window.go.main.App.PlayerID(); } catch (_) {}
+        if (id && id !== sentUser) {
+          sentUser = id;
+          if (sock.readyState === 1) sock.send(JSON.stringify({ event: 'identify', user: id }));
+          clearInterval(h); if (identifyTimer === h) identifyTimer = null;
+        }
+      }, 1000);
+      identifyTimer = h;
+    }
     try {
       // MIC NATIVO: a captura roda em Go via WASAPI com AudioCategory_Other (NAO
       // Communications), entregue por um WS local de PCM mono float32 @48k. Sem
@@ -537,6 +566,7 @@ async function start(s) {
 
 function stop() {
   if (posTimer) { clearInterval(posTimer); posTimer = null; }
+  if (identifyTimer) { clearInterval(identifyTimer); identifyTimer = null; }
   if (pc) { try { pc.close(); } catch (_) {} pc = null; }
   if (ws) { try { ws.close(); } catch (_) {} ws = null; }
   for (const id in peers) {

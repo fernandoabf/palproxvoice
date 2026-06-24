@@ -47,5 +47,5 @@ Cada track de áudio sai com `StreamID = id do peer`, pro cliente casar áudio �
 > **V1.5** vai estender isto pra protocolo agnóstico de fonte (`{userId,...}` +
 > `authoritativeMode`). Ver [../docs/ROADMAP.md](../docs/ROADMAP.md).
 
-A pasta `web/` é um **cliente de teste** servido em `/` — abre 2 abas e anda com
-WASD pra exercitar SFU + espacialização sem o jogo.
+O servidor é **só-API** (sinalização ws em `/ws` + mídia UDP) — não embute cliente.
+O cliente é o **companion** (`../companion/`).

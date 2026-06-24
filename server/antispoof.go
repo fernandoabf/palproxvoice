@@ -148,6 +148,9 @@ func pollREST(client *http.Client) {
 		}
 		if p.PlayerID != "" {
 			byUser[p.PlayerID] = p
+			// FGuid e' hex (case-insensitive); o mod escreve em MAIUSCULO. Indexa a
+			// versao upper tambem pra casar independente do case que a REST devolver.
+			byUser[strings.ToUpper(p.PlayerID)] = p
 		}
 		if p.IP != "" {
 			byIP[p.IP] = append(byIP[p.IP], p)
@@ -176,6 +179,13 @@ func lookupAuthoritative(p *peerState, cliX, cliY float64) (rp restPlayer, ok bo
 		if rp, ok = restByUser[p.userID]; ok {
 			return rp, true
 		}
+		// fallback case-insensitive (FGuid em case diferente). userId de plataforma
+		// ("gdk_/steam_") em upper nao colide com nada -> sem falso positivo.
+		if up := strings.ToUpper(p.userID); up != p.userID {
+			if rp, ok = restByUser[up]; ok {
+				return rp, true
+			}
+		}
 	}
 	cands := restByIP[p.ip]
 	switch len(cands) {
@@ -202,6 +212,11 @@ func dist2(ax, ay, bx, by float64) float64 {
 // resolveOutgoingPos decide o "x,y,z,yaw" que vai ser repassado pelo sender p.
 // drop=true (so na politica B) sinaliza que o peer deve ser derrubado/bloqueado.
 func resolveOutgoingPos(p *peerState, raw string) (out string, drop bool) {
+	// V2 (EXPERIMENTAL): se o feed do mod server-side tem esse peer, usa a posicao+yaw
+	// autoritativos e IGNORA o que o cliente reportou. Prioridade sobre a REST.
+	if v2, ok := v2Pos(p); ok {
+		return v2, false
+	}
 	if authMode == "off" {
 		return raw, false
 	}

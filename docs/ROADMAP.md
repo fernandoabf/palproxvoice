@@ -1,6 +1,6 @@
 # Roadmap — PalProxVoice
 
-## Estado atual — `v0.2.0` (validado in-game)
+## Estado atual — `v0.11.0-alpha` (validado in-game)
 
 Produto funcionando ponta-a-ponta, **2 pessoas reais pela internet**:
 
@@ -39,13 +39,15 @@ conecta no voz daquele IP **sozinho** — sem o amigo digitar nada.
   2. `GameServerIPFromSave` — `PalOptionSaveGame` (pega Direct Connect **e** join pela lista do Steam). ✅ testado.
   3. `GameServerIP` — `GameUserSettings.ini` (só Direct Connect).
 - **Descoberta do voz:** convenção `IP-do-jogo : 8765` (`AutoPort`); override = lista manual no `config.json`.
-- **Consolidação:** mod C++ ([`mod-live/`](../mod-live/)) servindo posição+IP por **socket local (SSE)**, aposentando Lua+bridge+txt.
-- **Limite honesto:** sem anti-spoof ainda — posição é client-reported (confiança).
+- **Consolidação:** mod C++ ([`mod-live/`](../mod-live/)) servindo posição+IP por **socket local (SSE)**, aposentando Lua+txt.
+- **Limite honesto:** posição é client-reported (confiança) — resolvido na V1.5 abaixo.
 
-### V1.5 — anti-spoof (o que combinamos)
+### V1.5 — anti-spoof ✅ **implementado** (off por padrão)
 
 Servidor de voz **agnóstico de fonte** — posição pode vir do cliente OU do servidor,
-mesma forma. É a fundação que a V2 só pluga.
+mesma forma. É a fundação que a V2 só pluga. Implementado em `server/antispoof.go`;
+correlação por **FGuid** (mod escreve, companion manda no auth/`identify`) → IP →
+IP+proximidade. Deploy: [ANTI-SPOOF-DEPLOY.md](ANTI-SPOOF-DEPLOY.md).
 
 ```
 join (companion → voz):    { userId }                  # identidade
@@ -84,7 +86,7 @@ Guard-rails do `verify` (senão bane jogador honesto):
 
 ### Tarefas de validação (antes de codar fundo)
 
-- [ ] mod lê o **próprio `userId`** (probe in-game, como fizemos pra posição)
+- [x] mod lê a **própria identidade** ✅ — FGuid via `ps.IndividualHandleId.PlayerUId` (probe in-game), bate com o `playerId` da REST
 - [ ] V2: confirmar UE4SS server-side sob Proton no Palworld (AOB / `StaticConstructObject`)
 - [ ] V2: ler `yaw` (control rotation) de cada player no servidor
 

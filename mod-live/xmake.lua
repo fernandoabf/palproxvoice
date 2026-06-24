@@ -1,16 +1,31 @@
--- Build do PalProxVoiceLive (mod C++ do UE4SS).
--- Copie esta pasta pra dentro de RE-UE4SS/Mods/PalProxVoiceLive/ e use o build
--- do RE-UE4SS (que ja define o target "UE4SS" e o SDK). Ver README.md.
+-- Build do PalProxVoiceLive (mod C++ do RE-UE4SS) — caminho XMAKE (legado).
 --
--- NAO testado aqui (sem Windows/MSVC). Ajuste conforme a versao do RE-UE4SS.
-
-add_rules("mode.debug", "mode.release")
+-- O RE-UE4SS atual usa CMake como build padrao (xmake esta marcado pra deprecar).
+-- Se preferir CMake, use o CMakeLists.txt desta pasta (ver README). Este xmake.lua
+-- e o equivalente pro fluxo antigo: o root xmake do RE-UE4SS faz includes("cppmods"),
+-- e o cppmods/xmake.lua faz includes("<SeuMod>"). Ou seja:
+--
+--   RE-UE4SS/
+--     xmake.lua            -> includes("cppmods")
+--     cppmods/
+--       xmake.lua          -> includes("PalProxVoiceLive")   <- ADICIONE esta linha
+--       PalProxVoiceLive/  <- copie ESTA pasta pra ca
+--         xmake.lua        <- este arquivo
+--         dllmain.cpp
+--
+-- Build a partir da raiz do RE-UE4SS: `xmake build PalProxVoiceLive`.
 
 target("PalProxVoiceLive")
     set_kind("shared")
-    set_languages("cxx20")
+    set_languages("cxxlatest") -- UE4SS exige C++ moderno (cxxlatest = /std:c++latest no MSVC)
     add_files("dllmain.cpp")
 
-    -- dependencias do RE-UE4SS (o build raiz do UE4SS injeta isso normalmente):
+    -- Depende do target UE4SS (traz includes do Mod/, Unreal/, DynamicOutput/ e a vtable do CppUserModBase).
+    -- imgui/ImGui e arrastado transitivamente pelo dep UE4SS; NAO adicione add_packages("imgui") a mao
+    -- (o setup atual nao expoe esse package nesse nome e quebra o build).
     add_deps("UE4SS")
-    add_packages("imgui")  -- conforme o setup padrao de mods C++ do UE4SS
+
+    -- [AJUSTE 1 - OPCAO A] Se for usar o dump CXX do jogo (NetConnection.hpp), aponte aqui
+    -- pro caminho dos cxx_headers gerados e defina a macro que liga a OPCAO A no dllmain:
+    -- add_includedirs("C:/caminho/para/UE4SS_CXX_Gen/cxx_headers")
+    -- add_defines("PPV_USE_CXX_SDK")

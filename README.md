@@ -79,7 +79,7 @@ docker compose up -d --build
   100% proximity.
 
 TLS/firewall details and an optional test Palworld: see
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and `docker-compose.palworld-test.yml`.
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and `docker-compose.palworld.example.yml`.
 
 ---
 
@@ -90,25 +90,25 @@ TLS/firewall details and an optional test Palworld: see
 ```
 mod/PalProxVoice/    UE4SS mod (Lua) — reads position+yaw, writes C:\Users\Public\palproxvoice_pos.txt
 companion/           Wails desktop app (Go+WebView2) — 3D voice + auto-connect   (BUILD.md)
-server/              Go voice server (SFU + position relay) + Dockerfile + web/ (test client)
+server/              Go voice server (SFU + position relay + anti-spoof) + Dockerfile
 mod-live/            [V1] optional C++ mod — current session IP over a socket (scaffold, build on Windows)
-bridge/              [legacy] file→HTTP bridge for a plain browser; the companion already does this
 installer/           Inno Setup installer (UE4SS + mod + companion + auto-start)
-docs/                ARCHITECTURE.md · ROADMAP.md
-docker-compose*.yml  voice · test palworld · local.sh
+docs/                ARCHITECTURE.md · ROADMAP.md · ANTI-SPOOF-DEPLOY.md
+docker-compose.yml                    voice server
+docker-compose.palworld.example.yml   example: Palworld + REST on the palprox network
 ```
 
 ### Run locally (no game, no VPS)
 
 ```bash
 cp .env.example .env          # VOICE_PASSWORD=test, PUBLIC_IP empty
-docker compose up --build     # voice only
+docker compose up --build     # voice server only (API; no built-in web client)
 ```
 
-Open `http://localhost:8088` in 2 tabs (headphones!), same password, **Join**. Move
-with `W A S D`, turn with `← →` — the other tab changes side and volume. This
-exercises the SFU + spatialization without Palworld. (Port = `HTTP_PORT` from
-`.env`; on WSL2 use 8088.) `./local.sh` brings up the voice **+** a test Palworld together.
+The server is **API-only** — connect with the **companion** (see *Build the companion*)
+pointed at `localhost:<HTTP_PORT>` (8088 on WSL2). You need two clients (two machines) to
+hear the SFU + spatialization. To also run a Palworld with the anti-spoof REST, see
+`docker-compose.palworld.example.yml`.
 
 ### Build the companion
 

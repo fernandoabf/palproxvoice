@@ -5,6 +5,7 @@ import (
 	"embed"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/wailsapp/wails/v2"
@@ -111,6 +112,23 @@ func (a *App) onSecondInstance(_ options.SecondInstanceData) {
 // shutdown is called when the app closes.
 func (a *App) shutdown(ctx context.Context) {
 	// nothing to clean up for now
+}
+
+// PlayerID le o FGuid do player que o mod escreve em palproxvoice_id.txt e o
+// devolve pro frontend mandar no auth (campo "user"). O servidor de voz usa isso
+// pra correlacionar o peer com a REST do Palworld (anti-spoof) — cobre o caso de
+// varios jogadores no mesmo IP (mesma casa). "" se o arquivo ainda nao existe
+// (ainda nao entrou no mundo) -> o servidor cai pra correlacao por IP+proximidade.
+func (a *App) PlayerID() string {
+	pub := os.Getenv("PUBLIC")
+	if pub == "" {
+		pub = `C:\Users\Public`
+	}
+	data, err := os.ReadFile(filepath.Join(pub, "palproxvoice_id.txt"))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
 }
 
 // positionListener reads C:\Users\Public\palproxvoice_pos.txt every 50ms and

@@ -7,7 +7,6 @@ RUN go mod tidy && CGO_ENABLED=0 go build -o /voice .
 
 FROM gcr.io/distroless/static-debian12
 COPY --from=build /voice /voice
-COPY web /web
 WORKDIR /
 EXPOSE 8080
 ENTRYPOINT ["/voice"]
