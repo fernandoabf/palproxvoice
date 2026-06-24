@@ -62,10 +62,13 @@ export STEAM_COMPAT_DATA_PATH="${STEAM_COMPAT_DATA_PATH:-$PAL_DIR/compatdata/$AP
 export STEAM_COMPAT_APP_ID="$APPID" SteamAppId="$APPID" SteamGameId="$APPID"
 # SO o proxy do UE4SS. NAO desligar d3d: o PalServer precisa do RHI (com d3d off ele sai cedo).
 export WINEDLLOVERRIDES="${WINEDLLOVERRIDES:-dwmapi=n,b}"
-# WINEDEBUG=-all + PROTON_LOG=0: o trace verboso (storm de SEH) e' SINCRONO e serializa o
-# wineserver -> vira "hang". (P/ debug: PROTON_LOG=1 + WINEDEBUG=+seh,+tid por alguns seg.)
-export WINEDEBUG="${WINEDEBUG:--all}"
-export PROTON_LOG="${PROTON_LOG:-0}" PROTON_LOG_DIR="${PROTON_LOG_DIR:-$PAL_DIR}"
+# PLANO B: esync/fsync OFF -> sync server-side antigo do wine (sem eventfd/futex). O ulimit
+# alto NAO resolveu o hang, entao testamos o mecanismo de sync inteiro. Bonus: a "tempestade
+# de SEH" pode ser o esync falhando a criar eventfd -> com esync off deve sumir.
+export PROTON_NO_ESYNC="${PROTON_NO_ESYNC:-1}"
+export PROTON_NO_FSYNC="${PROTON_NO_FSYNC:-1}"
+# logs LIGADOS de volta p/ diagnosticar onde trava (steam-$APPID.log no $PAL_DIR).
+export PROTON_LOG="${PROTON_LOG:-1}" PROTON_LOG_DIR="${PROTON_LOG_DIR:-$PAL_DIR}"
 PROTON="${PROTON:-/proton/proton}"
 mkdir -p "$STEAM_COMPAT_CLIENT_INSTALL_PATH" "$STEAM_COMPAT_DATA_PATH" "$FEED_DIR"
 
