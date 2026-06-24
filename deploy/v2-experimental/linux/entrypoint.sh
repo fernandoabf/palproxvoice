@@ -67,8 +67,10 @@ export WINEDLLOVERRIDES="${WINEDLLOVERRIDES:-dwmapi=n,b}"
 # de SEH" pode ser o esync falhando a criar eventfd -> com esync off deve sumir.
 export PROTON_NO_ESYNC="${PROTON_NO_ESYNC:-1}"
 export PROTON_NO_FSYNC="${PROTON_NO_FSYNC:-1}"
-# logs LIGADOS de volta p/ diagnosticar onde trava (steam-$APPID.log no $PAL_DIR).
-export PROTON_LOG="${PROTON_LOG:-1}" PROTON_LOG_DIR="${PROTON_LOG_DIR:-$PAL_DIR}"
+# logs QUIETOS (default): o wine grava um steam-$APPID.log gigante com o "storm" benigno de
+# nomeacao de thread. P/ debugar: PROTON_LOG=1 WINEDEBUG=  no compose.
+export WINEDEBUG="${WINEDEBUG:--all}"
+export PROTON_LOG="${PROTON_LOG:-0}" PROTON_LOG_DIR="${PROTON_LOG_DIR:-$PAL_DIR}"
 PROTON="${PROTON:-/proton/proton}"
 mkdir -p "$STEAM_COMPAT_CLIENT_INSTALL_PATH" "$STEAM_COMPAT_DATA_PATH" "$FEED_DIR"
 
