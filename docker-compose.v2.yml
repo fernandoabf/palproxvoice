@@ -1,0 +1,55 @@
+# PalProxVoice V2 (EXPERIMENTAL) — compose na RAIZ pro Dokploy (caminhos limpos ./).
+# ⚠️ NÃO TESTADO. Servidor Palworld MODADO (Proton+UE4SS) + voz, em PORTAS DESLOCADAS
+# pra coexistir com teu Palworld de produção.
+#
+# Dokploy: Branch = experimental/v2-serverside ; Compose Path = ./docker-compose.v2.yml
+# Local:   docker compose -f docker-compose.v2.yml up -d --build
+services:
+  palworld-v2:
+    build:
+      context: ./deploy/v2-experimental/linux   # Dockerfile + entrypoint.sh (Proton)
+    container_name: palworld-v2
+    restart: unless-stopped
+    stop_grace_period: 30s
+    environment:
+      PORT: "8311"
+      QUERY_PORT: "27115"
+      REST_PORT: "8312"
+      RCON_PORT: "25675"
+      ADMIN_PASSWORD: "${V2_ADMIN_PASSWORD:-trocar-senha-forte}"
+    ports:
+      - "0.0.0.0:8311:8311/udp"       # jogo (DESLOCADA do prod 8211)
+      - "0.0.0.0:27115:27115/udp"     # query (DESLOCADA do 27015)
+      # REST 8312 NÃO publicada -> o voz fala com ela só por dentro da rede
+    volumes:
+      - palworld_v2_data:/palworld
+      - ./mod-server/PalProxVoiceServer:/mods/PalProxVoiceServer:ro
+      - ppv_feed:/feed                # feed compartilhado com o voz
+    networks: [palprox-v2]
+
+  voice-v2:
+    build:
+      context: ./server               # servidor de voz Go deste repo
+    container_name: palproxvoice-v2
+    restart: unless-stopped
+    environment:
+      HTTP_PORT: "8080"               # interno (mapeado pra 8766 no host)
+      PUBLIC_IP: "${PUBLIC_IP:-}"     # IP público do host (pro áudio UDP)
+      VOICE_PASSWORD: "${VOICE_PASSWORD:-}"
+      SERVER_NAME: "OurWorld V2 TEST"
+      PPV_PLAYERS_FILE: "/feed/palproxvoice_players.txt"  # V2: feed autoritativo
+      PPV_FEED_POLL_MS: "100"
+    ports:
+      - "0.0.0.0:8766:8080"                   # sinalização ws (DESLOCADA do 8765)
+      - "0.0.0.0:50100-50110:50000-50010/udp" # mídia (DESLOCADA do 50000-50010)
+    volumes:
+      - ppv_feed:/feed:ro             # lê o feed que o servidor de jogo escreve
+    networks: [palprox-v2]
+
+volumes:
+  palworld_v2_data:
+  ppv_feed:
+
+networks:
+  palprox-v2:
+    name: palprox-v2
