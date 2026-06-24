@@ -13,9 +13,12 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -63,7 +66,10 @@ type wsMsg struct {
 
 func main() {
 	password = os.Getenv("VOICE_PASSWORD")
-	publicIP := os.Getenv("PUBLIC_IP") // IP publico do VPS
+	publicIP := os.Getenv("PUBLIC_IP") // IP publico do host (pro audio WebRTC)
+	if strings.EqualFold(strings.TrimSpace(publicIP), "auto") {
+		publicIP = detectPublicIP() // descobre sozinho (nao precisa fixar na mao)
+	}
 	serverName = envOr("SERVER_NAME", "PalProxVoice")
 	voiceRange = envOr("VOICE_RANGE", "50") // alcance recomendado (m)
 	wsPort := envOr("WS_PORT", "8080")
@@ -90,6 +96,31 @@ func main() {
 
 	log.Printf("PalProxVoice: ws=:%s  media-udp=50000-50010  publicIP=%q", wsPort, publicIP)
 	log.Fatal(http.ListenAndServe(":"+wsPort, nil))
+}
+
+// detectPublicIP descobre o IP publico do host (PUBLIC_IP=auto). E' o endereco que o
+// WebRTC anuncia como candidato ICE -> o audio UDP vai DIRETO nesse IP (nao da pra ser
+// nome de container: o cliente remoto esta fora do Docker). "" se nao conseguir.
+func detectPublicIP() string {
+	client := &http.Client{Timeout: 5 * time.Second}
+	for _, url := range []string{"https://api.ipify.org", "https://ifconfig.me/ip", "https://icanhazip.com"} {
+		resp, err := client.Get(url)
+		if err != nil {
+			continue
+		}
+		b, err := io.ReadAll(io.LimitReader(resp.Body, 64))
+		resp.Body.Close()
+		if err != nil {
+			continue
+		}
+		ip := strings.TrimSpace(string(b))
+		if net.ParseIP(ip) != nil {
+			log.Printf("PUBLIC_IP=auto -> detectado %s", ip)
+			return ip
+		}
+	}
+	log.Printf("PUBLIC_IP=auto -> nao consegui detectar; seguindo sem NAT1To1 (audio pode falhar de fora)")
+	return ""
 }
 
 func envOr(k, d string) string {

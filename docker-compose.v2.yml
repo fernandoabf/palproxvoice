@@ -34,7 +34,9 @@ services:
     restart: unless-stopped
     environment:
       HTTP_PORT: "8080"               # interno (mapeado pra 8766 no host)
-      PUBLIC_IP: "${PUBLIC_IP:-}"     # IP público do host (pro áudio UDP)
+      PUBLIC_IP: "${PUBLIC_IP:-auto}" # IP público do host p/ o áudio UDP. "auto" = o voz
+                                      # descobre sozinho. (Nome de container NÃO serve: o
+                                      # cliente remoto está fora do Docker.)
       VOICE_PASSWORD: "${VOICE_PASSWORD:-}"
       SERVER_NAME: "OurWorld V2 TEST"
       PPV_PLAYERS_FILE: "/feed/palproxvoice_players.txt"  # V2: feed autoritativo
