@@ -42,9 +42,16 @@ MODDST="$WIN64/ue4ss/Mods/PalProxVoiceServer"
 mkdir -p "$MODDST"
 cp -rf "$MOD_SRC/scripts" "$MODDST/"
 : > "$MODDST/enabled.txt"
-# salvaguarda #452 (cliente nao conecta com UE4SS): desliga o UObjectArrayCache.
+# UE4SS-settings.ini p/ HEADLESS: sem isso o GUI console do UE4SS tenta criar janela
+# num prefixo sem X e TRAVA o boot (RE-UE4SS #497) -> Pal.log nem e' criado. Espelha o
+# unico server UE4SS-sob-Proton comprovado (NewittAll). + salvaguarda #452.
 SETTINGS="$WIN64/ue4ss/UE4SS-settings.ini"
-[ -f "$SETTINGS" ] && sed -i 's/^[[:space:]]*bUseUObjectArrayCache[[:space:]]*=.*/bUseUObjectArrayCache = false/I' "$SETTINGS" || true
+if [ -f "$SETTINGS" ]; then
+  sed -i 's/^[[:space:]]*GuiConsoleEnabled[[:space:]]*=.*/GuiConsoleEnabled = 0/I'  "$SETTINGS"
+  sed -i 's/^[[:space:]]*GuiConsoleVisible[[:space:]]*=.*/GuiConsoleVisible = 0/I'  "$SETTINGS"
+  sed -i 's/^[[:space:]]*GraphicsAPI[[:space:]]*=.*/GraphicsAPI = dx11/I'           "$SETTINGS"
+  sed -i 's/^[[:space:]]*bUseUObjectArrayCache[[:space:]]*=.*/bUseUObjectArrayCache = false/I' "$SETTINGS"
+fi
 
 echo "[ppv-v2] 4/5 preparando Proton + feed compartilhado..."
 export HOME="${HOME:-/root}"
@@ -87,9 +94,12 @@ PUBDIR="$STEAM_COMPAT_DATA_PATH/pfx/drive_c/users/Public"
 mkdir -p "$(dirname "$PUBDIR")"
 rm -rf "$PUBDIR" && ln -sfn "$FEED_DIR" "$PUBDIR"
 
-echo "[ppv-v2] 5/5 lançando o servidor sob Proton (cd Win64 + nome relativo)..."
+echo "[ppv-v2] 5/5 lançando o servidor sob Proton (xvfb-run + cd Win64 + nome relativo)..."
 cd "$WIN64"   # CRÍTICO: lançar por nome RELATIVO ou o Proton não resolve a dwmapi.dll
-exec "$PROTON" run ./PalServer-Win64-Shipping-Cmd.exe \
+# xvfb-run: dá um X virtual ao Wine -> mata o nodrv_CreateWindow ("no driver could be
+# loaded") que travava o boot. -a = escolhe um display livre sozinho.
+exec xvfb-run -a -s "-screen 0 1024x768x24" \
+  "$PROTON" run ./PalServer-Win64-Shipping-Cmd.exe \
   -port="$PORT" -QueryPort="$QUERY_PORT" -RCONPort="$RCON_PORT" -RESTAPIPort="$REST_PORT" \
   -ServerName="OurWorld V2 TEST" -AdminPassword="$ADMIN_PASSWORD" \
   -useperfthreads -NoAsyncLoadingThread -UseMultithreadForDS

@@ -63,13 +63,15 @@ local function snapshot()
 end
 
 local lastCount = -1
+local warnedOpen = false
 
 local function step()
     local lines = snapshot()
     local n = #lines
     -- grava o feed (sobrescreve) — o voz co-locado le isso
     local f = io.open(OUT, "w")
-    if f then f:write(table.concat(lines, "\n")); if n > 0 then f:write("\n") end; f:close() end
+    if f then f:write(table.concat(lines, "\n")); if n > 0 then f:write("\n") end; f:close()
+    elseif not warnedOpen then warnedOpen = true; log("ERRO: io.open falhou ao gravar o feed em " .. OUT) end
     -- log so quando a contagem muda (nao floda o UE4SS.log)
     if n ~= lastCount then
         lastCount = n
