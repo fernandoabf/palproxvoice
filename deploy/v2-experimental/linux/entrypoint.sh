@@ -42,12 +42,31 @@ MODDST="$WIN64/ue4ss/Mods/PalProxVoiceServer"
 mkdir -p "$MODDST"
 cp -rf "$MOD_SRC/scripts" "$MODDST/"
 : > "$MODDST/enabled.txt"
+# salvaguarda #452 (cliente nao conecta com UE4SS): desliga o UObjectArrayCache.
+SETTINGS="$WIN64/ue4ss/UE4SS-settings.ini"
+[ -f "$SETTINGS" ] && sed -i 's/^[[:space:]]*bUseUObjectArrayCache[[:space:]]*=.*/bUseUObjectArrayCache = false/I' "$SETTINGS" || true
 
 echo "[ppv-v2] 4/5 preparando Proton + feed compartilhado..."
-export STEAM_COMPAT_CLIENT_INSTALL_PATH="${STEAM_COMPAT_CLIENT_INSTALL_PATH:-/root/.steam}"
+export HOME="${HOME:-/root}"
+# /etc/machine-id: wine/dbus reclamam sem ele ("Failed to open /etc/machine-id")
+[ -s /etc/machine-id ] || tr -d '-' < /proc/sys/kernel/random/uuid > /etc/machine-id 2>/dev/null || true
+export STEAM_COMPAT_CLIENT_INSTALL_PATH="${STEAM_COMPAT_CLIENT_INSTALL_PATH:-$HOME/.steam/steam}"
 export STEAM_COMPAT_DATA_PATH="${STEAM_COMPAT_DATA_PATH:-$PAL_DIR/compatdata/$APPID}"
+export STEAM_COMPAT_APP_ID="$APPID" SteamAppId="$APPID" SteamGameId="$APPID"
+export WINEDLLOVERRIDES="${WINEDLLOVERRIDES:-dwmapi=n,b}"   # garante o proxy do UE4SS sob wine
+export PROTON_LOG="${PROTON_LOG:-1}" PROTON_LOG_DIR="${PROTON_LOG_DIR:-$PAL_DIR}"  # wine log -> $PAL_DIR/steam-$APPID.log
 PROTON="${PROTON:-/proton/proton}"
-mkdir -p "$STEAM_COMPAT_CLIENT_INSTALL_PATH/steam" "$STEAM_COMPAT_CLIENT_INSTALL_PATH/root" "$FEED_DIR"
+mkdir -p "$STEAM_COMPAT_CLIENT_INSTALL_PATH" "$STEAM_COMPAT_DATA_PATH" "$FEED_DIR"
+
+# steamclient.so: o stub steam.exe do Proton procura num caminho HARDCODED
+# ($HOME/.steam/sdk{32,64}/steamclient.so — Proton #9068; IGNORA o COMPAT_CLIENT_INSTALL_PATH).
+# Sem isso o PalServer crasha no boot (era o nosso loop de restart). Linka do steamcmd.
+echo "[ppv-v2]   linkando steamclient.so (Proton stub: ~/.steam/sdk{32,64})..."
+mkdir -p "$HOME/.steam/sdk32" "$HOME/.steam/sdk64"
+sc32="$(find /steamcmd /root/.steam /root/Steam -path '*linux32*/steamclient.so' 2>/dev/null | head -n1 || true)"
+sc64="$(find /steamcmd /root/.steam /root/Steam -path '*linux64*/steamclient.so' 2>/dev/null | head -n1 || true)"
+if [ -n "${sc32:-}" ]; then ln -sf "$sc32" "$HOME/.steam/sdk32/steamclient.so"; echo "[ppv-v2]     sdk32 -> $sc32"; fi
+if [ -n "${sc64:-}" ]; then ln -sf "$sc64" "$HOME/.steam/sdk64/steamclient.so"; echo "[ppv-v2]     sdk64 -> $sc64"; else echo "[ppv-v2]     WARN: steamclient.so linux64 nao achado — PalServer pode crashar no boot"; fi
 
 # IMPORTANTE: NAO copiar default_pfx na mao. Isso deixa o prefixo meio-inicializado
 # (a pasta pfx existe mas sem os arquivos de controle 'version'/'tracked_files') e o

@@ -12,9 +12,9 @@ ARG GE_PROTON=GE-Proton9-20
 # freetype (fontes), gnutls (TLS/HTTPS do Steam), libgl1/libvulkan1 (o wine PROBA
 # mesmo headless e aborta se faltam). lib32* porque o wine roda 32 e 64 bits.
 RUN dpkg --add-architecture i386 && apt-get update && apt-get install -y --no-install-recommends \
-      python3 \
+      python3 locales \
       curl ca-certificates unzip tar xz-utils zstd \
-      lib32gcc-s1 libgcc-s1 \
+      lib32gcc-s1 libgcc-s1 lib32stdc++6 \
       libfreetype6 libfreetype6:i386 \
       libgnutls30 libgnutls30:i386 \
       libgl1 libgl1:i386 libvulkan1 libvulkan1:i386 \
