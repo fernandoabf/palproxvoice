@@ -8,20 +8,23 @@ ARG GE_PROTON=GE-Proton9-20
 
 # python3 = OBRIGATORIO: o launcher do Proton e' um script Python (sem ele:
 #   "/usr/bin/env: 'python3': No such file or directory").
-# xvfb/xauth = X virtual: o GUI console do UE4SS tenta criar JANELA mesmo headless e
-#   TRAVA o boot num prefixo sem display (RE-UE4SS #497) -> rodamos sob xvfb-run.
-# O resto = libs que o wine do GE-Proton linka em runtime (headless, sem grafico):
-# freetype (fontes), gnutls (TLS/HTTPS do Steam), libgl1/libvulkan1 (o wine PROBA
-# mesmo headless e aborta se faltam). lib32* porque o wine roda 32 e 64 bits.
+# SEM xvfb de proposito: os servers Palworld-sob-Proton comprovados rodam headless puro;
+#   com GuiConsole desligado nao ha janela, e um X sem GLX faz o Proton tentar o stack
+#   DXVK/Vulkan e TRAVAR no boot (descoberto na pratica). Rodamos headless + WineD3D.
+# Deps do wine headless do GE-Proton (alinhado aos dockers que comprovadamente sobem,
+# que NAO usam slim): freetype/fontconfig/fonts (Slate/UE), gnutls (TLS), nss/nspr,
+# libgl1-mesa-dri (GL software), winbind (NTLM), cabextract/xdg-user-dirs (prefix),
+# procps (ps p/ debug). lib32* porque o wine roda 32 e 64 bits.
 RUN dpkg --add-architecture i386 && apt-get update && apt-get install -y --no-install-recommends \
-      python3 locales \
-      xvfb xauth \
-      curl ca-certificates unzip tar xz-utils zstd \
+      python3 locales procps \
+      curl ca-certificates unzip tar xz-utils zstd cabextract xdg-user-dirs winbind \
       lib32gcc-s1 libgcc-s1 lib32stdc++6 \
-      libfreetype6 libfreetype6:i386 \
-      libgnutls30 libgnutls30:i386 \
-      libgl1 libgl1:i386 libvulkan1 libvulkan1:i386 \
-    && rm -rf /var/lib/apt/lists/*
+      libfreetype6 libfreetype6:i386 libfontconfig1 fontconfig fonts-liberation fonts-dejavu-core \
+      libgnutls30 libgnutls30:i386 libnss3 libnspr4 \
+      libgl1 libgl1:i386 libgl1-mesa-dri libvulkan1 libvulkan1:i386 \
+    && rm -rf /var/lib/apt/lists/* \
+    && update-ca-certificates \
+    && sed -i 's/# en_US.UTF-8/en_US.UTF-8/' /etc/locale.gen && locale-gen
 
 # steamcmd
 RUN mkdir -p /steamcmd && \

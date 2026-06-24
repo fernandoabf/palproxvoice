@@ -60,8 +60,13 @@ export HOME="${HOME:-/root}"
 export STEAM_COMPAT_CLIENT_INSTALL_PATH="${STEAM_COMPAT_CLIENT_INSTALL_PATH:-$HOME/.steam/steam}"
 export STEAM_COMPAT_DATA_PATH="${STEAM_COMPAT_DATA_PATH:-$PAL_DIR/compatdata/$APPID}"
 export STEAM_COMPAT_APP_ID="$APPID" SteamAppId="$APPID" SteamGameId="$APPID"
-export WINEDLLOVERRIDES="${WINEDLLOVERRIDES:-dwmapi=n,b}"   # garante o proxy do UE4SS sob wine
-export PROTON_LOG="${PROTON_LOG:-1}" PROTON_LOG_DIR="${PROTON_LOG_DIR:-$PAL_DIR}"  # wine log -> $PAL_DIR/steam-$APPID.log
+# d3d desligado (headless, sem GPU) + dwmapi=n,b p/ o injector do UE4SS.
+export WINEDLLOVERRIDES="${WINEDLLOVERRIDES:-d3d11=;dxgi=;d3d9=;dwmapi=n,b}"
+export PROTON_USE_WINED3D="${PROTON_USE_WINED3D:-1}"   # sem GPU: WineD3D em vez de DXVK/Vulkan
+# WINEDEBUG=-all + PROTON_LOG=0: o trace verboso (storm de SEH) e' SINCRONO e serializa o
+# wineserver -> vira "hang". Os servers comprovados rodam quietos. (P/ debug: PROTON_LOG=1.)
+export WINEDEBUG="${WINEDEBUG:--all}"
+export PROTON_LOG="${PROTON_LOG:-0}" PROTON_LOG_DIR="${PROTON_LOG_DIR:-$PAL_DIR}"
 PROTON="${PROTON:-/proton/proton}"
 mkdir -p "$STEAM_COMPAT_CLIENT_INSTALL_PATH" "$STEAM_COMPAT_DATA_PATH" "$FEED_DIR"
 
@@ -94,16 +99,14 @@ PUBDIR="$STEAM_COMPAT_DATA_PATH/pfx/drive_c/users/Public"
 mkdir -p "$(dirname "$PUBDIR")"
 rm -rf "$PUBDIR" && ln -sfn "$FEED_DIR" "$PUBDIR"
 
-echo "[ppv-v2] 5/5 lançando o servidor sob Proton (Xvfb :99 + cd Win64 + nome relativo)..."
-# Xvfb MANUAL: o wrapper xvfb-run EMPERRA em container (sobe o Xvfb mas nao executa o
-# comando -> o log para no '5/5' e nada roda). Sobe o X virtual direto, espera o socket,
-# exporta DISPLAY e lanca o Proton. Da um display real ao Wine (mata o nodrv_CreateWindow).
-Xvfb :99 -screen 0 1024x768x24 -nolisten tcp >/dev/null 2>&1 &
-export DISPLAY=:99
-n=0; while [ ! -S /tmp/.X11-unix/X99 ] && [ "$n" -lt 20 ]; do n=$((n+1)); sleep 0.5; done
-echo "[ppv-v2]   DISPLAY=$DISPLAY (Xvfb $([ -S /tmp/.X11-unix/X99 ] && echo OK || echo 'NAO subiu'))"
+echo "[ppv-v2] 5/5 lançando o servidor sob Proton (HEADLESS, sem Xvfb + cd Win64 + nome relativo)..."
+# SEM Xvfb/DISPLAY: os servers Palworld-sob-Proton comprovados rodam headless puro. Com o
+# GuiConsole desligado nao ha janela; e um X sem GLX faz o Proton tentar o stack grafico e
+# TRAVAR. EpicApp=PalServer = inicia o online subsystem (EOS) no modo dedicated correto.
+unset DISPLAY
 cd "$WIN64"   # CRÍTICO: lançar por nome RELATIVO ou o Proton não resolve a dwmapi.dll
 exec "$PROTON" run ./PalServer-Win64-Shipping-Cmd.exe \
   -port="$PORT" -QueryPort="$QUERY_PORT" -RCONPort="$RCON_PORT" -RESTAPIPort="$REST_PORT" \
   -ServerName="OurWorld V2 TEST" -AdminPassword="$ADMIN_PASSWORD" \
-  -useperfthreads -NoAsyncLoadingThread -UseMultithreadForDS
+  -useperfthreads -NoAsyncLoadingThread -UseMultithreadForDS \
+  EpicApp=PalServer

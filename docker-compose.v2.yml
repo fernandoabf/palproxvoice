@@ -13,6 +13,10 @@ services:
       context: ./deploy/v2-experimental/linux   # Dockerfile + entrypoint.sh (Proton)
     restart: unless-stopped
     stop_grace_period: 30s
+    ulimits:
+      nofile:                       # esync abre 1 eventfd por objeto de sync; sem isso
+        soft: 1048576               # estoura o limite de FD e DEADLOCKA o boot (~6 min)
+        hard: 1048576
     environment:
       PORT: "8311"
       QUERY_PORT: "27115"
