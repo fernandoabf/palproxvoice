@@ -94,12 +94,16 @@ PUBDIR="$STEAM_COMPAT_DATA_PATH/pfx/drive_c/users/Public"
 mkdir -p "$(dirname "$PUBDIR")"
 rm -rf "$PUBDIR" && ln -sfn "$FEED_DIR" "$PUBDIR"
 
-echo "[ppv-v2] 5/5 lançando o servidor sob Proton (xvfb-run + cd Win64 + nome relativo)..."
+echo "[ppv-v2] 5/5 lançando o servidor sob Proton (Xvfb :99 + cd Win64 + nome relativo)..."
+# Xvfb MANUAL: o wrapper xvfb-run EMPERRA em container (sobe o Xvfb mas nao executa o
+# comando -> o log para no '5/5' e nada roda). Sobe o X virtual direto, espera o socket,
+# exporta DISPLAY e lanca o Proton. Da um display real ao Wine (mata o nodrv_CreateWindow).
+Xvfb :99 -screen 0 1024x768x24 -nolisten tcp >/dev/null 2>&1 &
+export DISPLAY=:99
+n=0; while [ ! -S /tmp/.X11-unix/X99 ] && [ "$n" -lt 20 ]; do n=$((n+1)); sleep 0.5; done
+echo "[ppv-v2]   DISPLAY=$DISPLAY (Xvfb $([ -S /tmp/.X11-unix/X99 ] && echo OK || echo 'NAO subiu'))"
 cd "$WIN64"   # CRÍTICO: lançar por nome RELATIVO ou o Proton não resolve a dwmapi.dll
-# xvfb-run: dá um X virtual ao Wine -> mata o nodrv_CreateWindow ("no driver could be
-# loaded") que travava o boot. -a = escolhe um display livre sozinho.
-exec xvfb-run -a -s "-screen 0 1024x768x24" \
-  "$PROTON" run ./PalServer-Win64-Shipping-Cmd.exe \
+exec "$PROTON" run ./PalServer-Win64-Shipping-Cmd.exe \
   -port="$PORT" -QueryPort="$QUERY_PORT" -RCONPort="$RCON_PORT" -RESTAPIPort="$REST_PORT" \
   -ServerName="OurWorld V2 TEST" -AdminPassword="$ADMIN_PASSWORD" \
   -useperfthreads -NoAsyncLoadingThread -UseMultithreadForDS
