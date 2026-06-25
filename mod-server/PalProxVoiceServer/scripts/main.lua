@@ -50,12 +50,17 @@ local function snapshot()
         if try(function() return pc:IsValid() end) then
             local pawn = try(function() return pc.Pawn end)
             local loc = pawn and try(function() return pawn:K2_GetActorLocation() end)
-            if loc and loc.X then -- so quem tem corpo no mundo (filtra CDO/sem pawn)
+            -- le X/Y/Z via try: durante o spawn/teleport o 'loc' pode vir num estado
+            -- transitorio (ja vi virar function) e indexar direto crasha o tick.
+            local x = loc and try(function() return loc.X end)
+            if x then -- so quem tem corpo valido no mundo (filtra CDO/sem pawn/transitorio)
+                local y = try(function() return loc.Y end) or 0
+                local z = try(function() return loc.Z end) or 0
                 local rot = try(function() return pc:GetControlRotation() end)
                     or try(function() return pawn:K2_GetActorRotation() end)
-                local yaw = (rot and rot.Yaw) or 0
+                local yaw = (rot and try(function() return rot.Yaw end)) or 0
                 local fg = fguidOf(pc) or "?"
-                lines[#lines + 1] = string.format("%s,%.1f,%.1f,%.1f,%.1f", fg, loc.X, loc.Y, loc.Z, yaw)
+                lines[#lines + 1] = string.format("%s,%.1f,%.1f,%.1f,%.1f", fg, x, y, z, yaw)
             end
         end
     end
