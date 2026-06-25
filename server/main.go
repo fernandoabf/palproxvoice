@@ -49,6 +49,9 @@ type peerState struct {
 	// anti-spoof (V1.5): identidade + estado de reconciliacao com a REST
 	ip       string  // IP publico do cliente (respeita X-Forwarded-For)
 	userID   string  // userId do Palworld, se o cliente mandou (cobre mesmo-IP)
+	// canais de voz: guild (auto do mod / codigo manual) + canal que o peer fala AGORA.
+	guild   string // grupo de voz de guild (mesmo guild = se ouvem no canal guild)
+	channel string // canal atual deste peer: "proximity" | "guild" | "global"
 	lastX    float64 // ultima posicao considerada valida
 	lastY    float64
 	hasLast  bool
@@ -218,7 +221,7 @@ func websocketHandler(w http.ResponseWriter, r *http.Request) {
 	})
 
 	// registra o peer e renegocia
-	self := &peerState{id: id, conn: conn, pc: pc, ip: peerIP, userID: peerUser}
+	self := &peerState{id: id, conn: conn, pc: pc, ip: peerIP, userID: peerUser, channel: "proximity"}
 	listLock.Lock()
 	peers = append(peers, self)
 	listLock.Unlock()
@@ -230,6 +233,17 @@ func websocketHandler(w http.ResponseWriter, r *http.Request) {
 	if info, err := json.Marshal(map[string]string{"name": serverName, "range": voiceRange}); err == nil {
 		_ = conn.WriteJSON(&wsMsg{Event: "serverinfo", Data: string(info)})
 	}
+	// manda a meta (guild/canal) dos peers JA conectados pro novo, pra ele ja mixar certo.
+	listLock.Lock()
+	for _, q := range peers {
+		if q.id == id || (q.guild == "" && q.channel == "") {
+			continue
+		}
+		if b, e := json.Marshal(map[string]string{"guild": q.guild, "channel": q.channel}); e == nil {
+			_ = conn.WriteJSON(&wsMsg{Event: "peermeta", ID: q.id, Data: string(b)})
+		}
+	}
+	listLock.Unlock()
 
 	// loop de leitura
 	for {
@@ -274,6 +288,20 @@ func websocketHandler(w http.ResponseWriter, r *http.Request) {
 			broadcastPos(id, out) // "x,y,z,yaw" (do cliente, da REST, ou ultima valida)
 			if drop {
 				return
+			}
+		case "meta":
+			// canais de voz: o companion seta seu guild + canal atual. O servidor so
+			// REPASSA a meta; quem decide ouvir (proximidade/guild/global) e o companion.
+			var meta struct {
+				Guild   string `json:"guild"`
+				Channel string `json:"channel"`
+			}
+			if json.Unmarshal([]byte(m.Data), &meta) == nil {
+				self.guild = meta.Guild
+				if meta.Channel != "" {
+					self.channel = meta.Channel
+				}
+				broadcastMeta(self)
 			}
 		}
 	}
@@ -324,6 +352,23 @@ func broadcastPos(fromID, data string) {
 			continue
 		}
 		_ = p.conn.WriteJSON(&wsMsg{Event: "pos", ID: fromID, Data: data})
+	}
+}
+
+// broadcastMeta repassa o guild + canal atual de um peer pros outros — o companion usa
+// pra decidir o mix (proximidade=panner 3D; guild=plano SE mesmo guild; global=plano).
+func broadcastMeta(p *peerState) {
+	b, err := json.Marshal(map[string]string{"guild": p.guild, "channel": p.channel})
+	if err != nil {
+		return
+	}
+	listLock.Lock()
+	defer listLock.Unlock()
+	for _, q := range peers {
+		if q.id == p.id {
+			continue
+		}
+		_ = q.conn.WriteJSON(&wsMsg{Event: "peermeta", ID: p.id, Data: string(b)})
 	}
 }
 
