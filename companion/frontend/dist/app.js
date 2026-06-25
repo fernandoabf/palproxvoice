@@ -299,12 +299,41 @@ async function onGameEnter() {
     try { ip = await window.go.main.App.DetectGameServerIP(); } catch (_) {}
     if (ip) {
       log(t('lg_game_detected', {ip}));
-      start({ name: 'auto ' + ip, url: 'ws://' + ip + ':' + (cfg.autoPort || 8765), password: cfg.autoPassword || '', voiceRangeMeters: 50 });
-      return;
+      // acha a PORTA do voz sozinho: testa portas comuns e usa a 1a que responde como
+      // PalProxVoice (handshake auth->hello). autoPort (se setado) vai primeiro.
+      const ports = [...new Set([cfg.autoPort, 8765, 8766, 8767, 8768].filter(Boolean))];
+      const port = await probeVoicePort(ip, ports, cfg.autoPassword || '');
+      if (port) {
+        log('voz encontrado em ' + ip + ':' + port);
+        start({ name: 'auto ' + ip, url: 'ws://' + ip + ':' + port, password: cfg.autoPassword || '', voiceRangeMeters: 50 });
+        return;
+      }
+      log('nenhum voz respondeu (portas ' + ports.join(',') + ')');
     }
     log(t('lg_no_ip'));
   }
   connectSelected();
+}
+
+// testa as portas em sequencia; resolve com a 1a que faz o handshake do PalProxVoice
+// (recebe "hello"). Conexao descartavel e leve (so ws+auth, sem WebRTC). null = nenhuma.
+function probeVoicePort(ip, ports, password) {
+  return new Promise(resolve => {
+    let i = 0;
+    const tryNext = () => {
+      if (i >= ports.length) { resolve(null); return; }
+      const port = ports[i++];
+      let done = false, sock = null;
+      const finish = ok => { if (done) return; done = true; clearTimeout(to); try { sock && sock.close(); } catch (_) {} ok ? resolve(port) : tryNext(); };
+      const to = setTimeout(() => finish(false), 1500);
+      try { sock = new WebSocket('ws://' + ip + ':' + port + '/ws'); } catch (_) { return finish(false); }
+      sock.onopen = () => { try { sock.send(JSON.stringify({ event: 'auth', data: password, user: '' })); } catch (_) {} };
+      sock.onmessage = ev => { try { const m = JSON.parse(ev.data); if (m.event === 'hello') return finish(true); if (m.event === 'error') return finish(false); } catch (_) {} };
+      sock.onerror = () => finish(false);
+      sock.onclose = () => finish(false);
+    };
+    tryNext();
+  });
 }
 if (window.runtime && window.runtime.EventsOn) {
   window.runtime.EventsOn('pos', onPos);
