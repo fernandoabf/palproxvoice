@@ -132,6 +132,20 @@ func (a *App) PlayerID() string {
 	return strings.TrimSpace(string(data))
 }
 
+// PlayerGuild le a guild do player que o mod escreve em palproxvoice_guild.txt (auto).
+// O companion usa isso pra voz de GUILD; "" -> cai no codigo manual de guild.
+func (a *App) PlayerGuild() string {
+	pub := os.Getenv("PUBLIC")
+	if pub == "" {
+		pub = `C:\Users\Public`
+	}
+	data, err := os.ReadFile(filepath.Join(pub, "palproxvoice_guild.txt"))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
+}
+
 // positionListener reads C:\Users\Public\palproxvoice_pos.txt every 50ms and
 // emits the "pos" event to the frontend whenever the line changes. Caminho FIXO
 // (mesma pasta pra todo processo) — %TEMP% varia entre o jogo e o companion.

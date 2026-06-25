@@ -115,3 +115,7 @@ pcall(function()
 end)
 
 print("[PalProxVoice] carregado. escrevendo -> " .. OUT .. "\n")
+
+-- Fase AUTO-GUILD: carrega o probe que descobre como ler a guild (loga no UE4SS.log).
+-- Quando acharmos o caminho certo, troco isto pela leitura real (escreve palproxvoice_guild.txt).
+pcall(function() require("probe_guild") end)

@@ -611,6 +611,14 @@ async function start(s) {
       if (ws && ws.readyState === 1)
         ws.send(JSON.stringify({ event: 'pos', data: `${me.x.toFixed(1)},${me.y.toFixed(1)},${me.z.toFixed(1)},${me.yaw.toFixed(1)}` }));
     }, 50); // 20Hz: dados mais finos; o setTargetAtTime suaviza o intervalo
+    // AUTO-GUILD: o mod escreve a guild ~segundos apos entrar no mundo. Le e usa (sobre
+    // o codigo manual). Se o mod nunca escrever (RE falhou), o codigo manual fica.
+    let gtries = 0;
+    const gpoll = setInterval(async () => {
+      if (!ws || ws.readyState !== 1 || ++gtries > 20) { clearInterval(gpoll); return; }
+      let g = ''; try { g = await window.go.main.App.PlayerGuild(); } catch (_) {}
+      if (g && g !== myGuild) setMyGuild(g);
+    }, 2000);
   };
 
   ws.onmessage = async ev => {
