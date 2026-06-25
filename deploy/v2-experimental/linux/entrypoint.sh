@@ -22,6 +22,7 @@ FEED_DIR="${FEED_DIR:-/feed}"                    # volume compartilhado com o vo
 PORT="${PORT:-8311}"; QUERY_PORT="${QUERY_PORT:-27115}"
 REST_PORT="${REST_PORT:-8312}"; RCON_PORT="${RCON_PORT:-25675}"
 ADMIN_PASSWORD="${ADMIN_PASSWORD:-trocar-senha-forte}"
+SERVER_PASSWORD="${SERVER_PASSWORD:-}"   # senha de ENTRAR no server (vazio = aberto)
 
 echo "[ppv-v2] 1/5 instalando/atualizando Palworld (depot Windows)..."
 /steamcmd/steamcmd.sh +@sSteamCmdForcePlatformType windows \
@@ -110,7 +111,9 @@ Xvfb :99 -screen 0 1024x768x24 -nolisten tcp >/dev/null 2>&1 &
 export DISPLAY=:99
 n=0; while [ ! -S /tmp/.X11-unix/X99 ] && [ "$n" -lt 20 ]; do n=$((n+1)); sleep 0.5; done
 cd "$WIN64"   # CRÍTICO: lançar por nome RELATIVO ou o Proton não resolve a dwmapi.dll
+# -ServerPassword so entra se SERVER_PASSWORD nao for vazio (senao server aberto)
+PWARG=(); [ -n "${SERVER_PASSWORD:-}" ] && PWARG=(-ServerPassword="$SERVER_PASSWORD")
 exec "$PROTON" run ./PalServer-Win64-Shipping-Cmd.exe \
   -port="$PORT" -QueryPort="$QUERY_PORT" -RCONPort="$RCON_PORT" -RESTAPIPort="$REST_PORT" \
-  -ServerName="OurWorld V2 TEST" -AdminPassword="$ADMIN_PASSWORD" \
+  -ServerName="OurWorld V2 TEST" -AdminPassword="$ADMIN_PASSWORD" "${PWARG[@]}" \
   -useperfthreads -NoAsyncLoadingThread -UseMultithreadForDS

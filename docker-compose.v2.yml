@@ -23,6 +23,7 @@ services:
       REST_PORT: "8312"
       RCON_PORT: "25675"
       ADMIN_PASSWORD: "${V2_ADMIN_PASSWORD:-trocar-senha-forte}"
+      SERVER_PASSWORD: "${V2_SERVER_PASSWORD:-}"   # senha de ENTRAR (vazio = aberto)
     ports:
       - "0.0.0.0:8311:8311/udp"       # jogo (DESLOCADA do prod 8211)
       - "0.0.0.0:27115:27115/udp"     # query (DESLOCADA do 27015)
