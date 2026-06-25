@@ -162,7 +162,7 @@
       <div id="connMeta" class="meta" hidden>
         <div class="mrow"><span class="k" data-i18n="m_server">Servidor</span><span id="mServer" class="v">—</span></div>
         <div class="mrow"><span class="k" data-i18n="m_players">Jogadores</span><span id="mPlayers" class="v">0</span></div>
-        <div class="mrow"><span class="k" data-i18n="m_channel">Canal</span><span class="v" data-i18n="ch_prox">Proximidade</span></div>
+        <div class="mrow"><span class="k" data-i18n="m_channel">Canal</span><span id="chanPill" class="v">proximity</span></div>
       </div>
 
       <div id="audioCtl" class="audioctl" hidden>
@@ -185,6 +185,18 @@
         <label class="field"><span data-i18n="out">Saída de áudio</span> <select id="cfgOutput"></select></label>
         <label class="field"><span data-i18n="vol_out">Volume de saída</span> <div class="rowline"><input id="cfgVolume" type="range" min="0" max="2" step="0.05" value="1"><span id="cfgVolumeVal" class="dim">100%</span></div></label>
         <div class="rowline"><button id="cfgRefreshDevices" class="mini" data-i18n="refresh">Atualizar dispositivos</button><span id="cfgDevHint" class="dim"></span></div>
+      </div>
+
+      <div class="card">
+        <div class="card-h">🎚️ Canais de voz</div>
+        <div class="rowline" style="gap:8px;margin-bottom:10px">
+          <button class="mini" data-chan="proximity">📍 Proximidade</button>
+          <button class="mini" data-chan="guild">🛡️ Guild</button>
+          <button class="mini" data-chan="global">🌐 Global</button>
+        </div>
+        <div class="dim" style="margin-bottom:10px">Tecla <b>V</b> cicla o canal (app focado). Você FALA no canal selecionado: proximidade = 3D, guild/global = plano. Você sempre OUVE guild (mesma guild) e global.</div>
+        <label class="field"><span>Código da guild (manual)</span> <input id="guildCode" type="text" placeholder="mesmo código = mesma voz de guild"></label>
+        <div class="dim">Auto: quando o mod ler a guild do jogo, ela entra sozinha. O código é fallback.</div>
       </div>
 
       <div class="card">

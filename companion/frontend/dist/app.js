@@ -7,6 +7,8 @@ const CM = 100;
 const peers = {};
 let posFromGame = false;
 let inGame = false;
+let myChannel = 'proximity';                          // canal que EU falo (Valorant): proximity | guild | global
+let myGuild = localStorage.getItem('ppv_guild') || ''; // minha guild (codigo manual; o mod sobrescreve no auto)
 
 let voiceRangeMeters = 50;
 let masterVolume = 1.0;      // volume de saida
@@ -210,6 +212,60 @@ function placePanner(p) {
   // frente/tras: atras (+Z no frame canonico) = abafado; frente = aberto.
   if (p.lp) ramp(p.lp.frequency, z > 0 ? 2800 : 18000);
 }
+
+// ----- canais de voz: proximidade (3D) / guild (plano, mesma guild) / global (plano) -----
+// Estilo Valorant: o player ESCOLHE o canal que fala; a guild vem do mod (auto) ou de um codigo.
+// O servidor so REPASSA quem fala em qual canal/guild; o MIX (o que voce ouve) e decidido aqui.
+const CHANNELS = ['proximity', 'guild', 'global'];
+// aplica o mix de um peer conforme o CANAL que ELE fala + a guild dele vs a MINHA.
+function applyPeerChannel(p) {
+  if (!p) return;
+  if ((p.channel || 'proximity') === 'proximity') {
+    if (p.flatGain) ramp(p.flatGain.gain, 0);
+    placePanner(p);                                 // 3D por distancia (so proximidade)
+    return;
+  }
+  if (p.pannerGain) ramp(p.pannerGain.gain, 0);     // guild/global = PLANO, sem panner
+  if (p.directGain) ramp(p.directGain.gain, 0);
+  const audible = p.channel === 'global' || (p.channel === 'guild' && myGuild && p.guild === myGuild);
+  if (p.flatGain) ramp(p.flatGain.gain, audible ? 1 : 0);
+}
+function sendMeta() {
+  if (ws && ws.readyState === 1)
+    ws.send(JSON.stringify({ event: 'meta', data: JSON.stringify({ guild: myGuild || '', channel: myChannel }) }));
+}
+function setChannel(ch) {
+  if (!CHANNELS.includes(ch) || ch === myChannel) return;
+  myChannel = ch; sendMeta(); updateChannelUI(); log('canal de voz: ' + ch, 'ok');
+}
+function cycleChannel() { setChannel(CHANNELS[(CHANNELS.indexOf(myChannel) + 1) % CHANNELS.length]); }
+function setMyGuild(g) {
+  g = (g || '').trim();
+  if (g === myGuild) return;
+  myGuild = g; try { localStorage.setItem('ppv_guild', g); } catch (_) {}
+  sendMeta();
+  for (const id in peers) applyPeerChannel(peers[id]); // re-avalia audibilidade da guild
+}
+function updateChannelUI() {
+  const pill = $('chanPill'); if (pill) pill.textContent = myChannel;
+  document.querySelectorAll('[data-chan]').forEach(b => {
+    const on = b.dataset.chan === myChannel;
+    b.style.outline = on ? '2px solid #2ea44f' : ''; b.style.opacity = on ? '1' : '0.6';
+  });
+  const gi = $('guildCode'); if (gi && gi.value !== myGuild) gi.value = myGuild;
+}
+function bindChannelUI() {
+  document.querySelectorAll('[data-chan]').forEach(b => b.onclick = () => setChannel(b.dataset.chan));
+  const gi = $('guildCode'); if (gi) { gi.value = myGuild; gi.onchange = () => setMyGuild(gi.value); }
+  updateChannelUI();
+}
+// tecla V cicla o canal (Valorant). So com a janela do companion FOCADA; in-game (overlay
+// sem foco) precisa de hotkey global (Go) — proximo passo.
+document.addEventListener('keydown', e => {
+  const tag = e.target && e.target.tagName;
+  if (tag && /^(INPUT|TEXTAREA|SELECT)$/.test(tag)) return;
+  if (e.key === 'v' || e.key === 'V') cycleChannel();
+});
 
 // ----- status (badge + card + dot + metricas) -----
 let connState = 'off'; // 'off' | 'connecting' | 'on'
@@ -476,10 +532,12 @@ async function start(s) {
     const lp = new BiquadFilterNode(actx, { type: 'lowpass', frequency: 18000, Q: 0.5 });
     src.connect(panner).connect(lp).connect(pannerGain).connect(masterGain);
     src.connect(directGain).connect(masterGain);
+    const flatGain = actx.createGain(); flatGain.gain.value = 0; // canal guild/global: som PLANO (sem panner)
+    src.connect(flatGain).connect(masterGain);
     const a = new Audio(); a.muted = true; a.srcObject = e.streams[0]; // keep-alive do stream
     if (a.setSinkId) { a.setSinkId(cfg.outputDeviceId || 'default').catch(() => {}); }
-    peers[id] = Object.assign(peers[id] || { x:0,y:0,z:0,yaw:0 }, { panner, pannerGain, directGain, lp, audio: a });
-    placePanner(peers[id]); updatePlayers(); log(t('lg_hearing_peer', { id: id.slice(0,8) }), 'ok');
+    peers[id] = Object.assign(peers[id] || { x:0,y:0,z:0,yaw:0 }, { panner, pannerGain, directGain, lp, flatGain, audio: a });
+    applyPeerChannel(peers[id]); updatePlayers(); log(t('lg_hearing_peer', { id: id.slice(0,8) }), 'ok');
   };
   pc.onicecandidate = e => { if (e.candidate) ws.send(JSON.stringify({ event: 'candidate', data: JSON.stringify(e.candidate) })); };
 
@@ -493,6 +551,7 @@ async function start(s) {
     try { uid = await window.go.main.App.PlayerID(); } catch (_) {}
     if (sock.readyState !== 1) return; // desconectou durante o await -> aborta sem erro
     sock.send(JSON.stringify({ event: 'auth', data: s.password, user: uid || '' }));
+    sendMeta(); // canais: manda guild (codigo/auto) + canal atual (proximity no inicio)
     // o FGuid demora ~6s pra replicar apos entrar no mundo, mas o auto-connect
     // dispara em ~50ms -> o auth quase sempre vai com user vazio. Entao, ate ter um
     // id, fica relendo e manda um {identify} quando ele aparecer (uma vez). Tambem
@@ -572,7 +631,11 @@ async function start(s) {
     if (m.event === 'candidate') { try { await pc.addIceCandidate(JSON.parse(m.data)); } catch (_) {} }
     if (m.event === 'pos') {
       const [x, y, z, yaw] = m.data.split(',').map(Number);
-      placePanner(peers[m.id] = Object.assign(peers[m.id] || {}, { x, y, z, yaw }));
+      applyPeerChannel(peers[m.id] = Object.assign(peers[m.id] || {}, { x, y, z, yaw }));
+    }
+    if (m.event === 'peermeta') { // canais: guild + canal atual de OUTRO peer
+      try { const md = JSON.parse(m.data);
+            applyPeerChannel(peers[m.id] = Object.assign(peers[m.id] || {}, { guild: md.guild, channel: md.channel })); } catch (_) {}
     }
   };
 
@@ -664,6 +727,7 @@ function bindProcUI(){
   c('pSens')     && (c('pSens').oninput      = e => { proc.sens = +e.target.value; c('pSensVal').textContent = proc.sens; saveProc(); applyProc(); });
 }
 bindProcUI();
+bindChannelUI();
 
 // ----- config / servidores -----
 function applyOutput() { if (masterGain) masterGain.gain.value = deafened ? 0 : masterVolume; }
