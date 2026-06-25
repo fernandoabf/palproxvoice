@@ -1,0 +1,46 @@
+# Fase 0 do mod NATIVO de Linux: PalServer-Linux (thijsvanloef) + toolbox Frida que anexa
+# no processo pra achar o GUObjectArray. Portas 8411/8412 (distintas do prod 8211 e do V2 8311).
+#   docker compose -f linux-native/docker-compose.yml up -d
+services:
+  palworld:
+    image: thijsvanloef/palworld-server-docker:latest
+    restart: unless-stopped
+    stop_grace_period: 30s
+    ports:
+      - "0.0.0.0:8411:8211/udp"   # jogo
+      - "0.0.0.0:27215:27215/udp" # query
+      - "0.0.0.0:8412:8212/tcp"   # REST (cross-check do leitor + fallback V1.5)
+    environment:
+      PUID: "1000"
+      PGID: "1000"
+      PORT: "8211"
+      QUERY_PORT: "27215"
+      PLAYERS: "16"
+      SERVER_NAME: "PPV Linux-native TEST"
+      ADMIN_PASSWORD: "${NATIVE_ADMIN_PASSWORD:-trocar-senha-forte}"
+      RCON_ENABLED: "true"
+      RCON_PORT: "25575"
+      REST_API_ENABLED: "true"      # REST p/ cross-check do leitor de memoria
+      REST_API_PORT: "8212"
+      MULTITHREADING: "true"
+    volumes:
+      - palworld_native:/palworld
+
+  # toolbox Frida: MESMA PID namespace do PalServer -> enxerga e anexa no processo.
+  # roda como root + SYS_PTRACE pra ler /proc/<pid>/mem do alvo.
+  frida:
+    image: python:3.11-slim
+    restart: unless-stopped
+    depends_on: [palworld]
+    pid: "service:palworld"                 # CRITICO: compartilha a PID namespace
+    cap_add: [SYS_PTRACE]
+    security_opt: ["seccomp=unconfined"]     # alguns hosts exigem p/ ptrace
+    volumes:
+      - ./probe.js:/probe.js:ro
+    command: >
+      bash -lc "pip install -q frida-tools &&
+      echo '[ppv] toolbox pronto. exec aqui e rode: frida -n PalServer-Linux-Shipping-Cmd -l /probe.js' &&
+      sleep infinity"
+
+volumes:
+  palworld_native:
