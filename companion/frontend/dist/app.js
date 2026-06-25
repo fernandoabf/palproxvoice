@@ -393,6 +393,7 @@ function probeVoicePort(ip, ports, password) {
 }
 if (window.runtime && window.runtime.EventsOn) {
   window.runtime.EventsOn('pos', onPos);
+  window.runtime.EventsOn('cyclechannel', () => cycleChannel()); // Alt+V global (in-game)
   // (re)entrou num mundo -> HUD pequeno de volta, mesmo se tinha minimizado
   window.runtime.EventsOn('gameEnter', () => { RT.WindowShow && RT.WindowShow(); setCompact(true); });
   window.runtime.EventsOn('posLost', () => {
