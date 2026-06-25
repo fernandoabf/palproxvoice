@@ -10,47 +10,48 @@
 services:
   palworld-v2:
     build:
-      context: ./deploy/v2-experimental/linux   # Dockerfile + entrypoint.sh (Proton)
+      context: ./deploy/v2-experimental/linux # Dockerfile + entrypoint.sh (Proton)
     restart: unless-stopped
     stop_grace_period: 30s
     ulimits:
-      nofile:                       # esync abre 1 eventfd por objeto de sync; sem isso
-        soft: 1048576               # estoura o limite de FD e DEADLOCKA o boot (~6 min)
+      nofile: # esync abre 1 eventfd por objeto de sync; sem isso
+        soft: 1048576 # estoura o limite de FD e DEADLOCKA o boot (~6 min)
         hard: 1048576
     environment:
       PORT: "8311"
       QUERY_PORT: "27115"
       REST_PORT: "8312"
       RCON_PORT: "25675"
+      USEAUTH: "{V2_USEAUTH:-false}" # true = exige login no Proton (Steam) p/ entrar
       ADMIN_PASSWORD: "${V2_ADMIN_PASSWORD:-trocar-senha-forte}"
-      SERVER_PASSWORD: "${V2_SERVER_PASSWORD:-}"   # senha de ENTRAR (vazio = aberto)
+      SERVER_PASSWORD: "${V2_SERVER_PASSWORD:-}" # senha de ENTRAR (vazio = aberto)
     ports:
-      - "0.0.0.0:8311:8311/udp"       # jogo (DESLOCADA do prod 8211)
-      - "0.0.0.0:27115:27115/udp"     # query (DESLOCADA do 27015)
+      - "0.0.0.0:8311:8311/udp" # jogo (DESLOCADA do prod 8211)
+      - "0.0.0.0:27115:27115/udp" # query (DESLOCADA do 27015)
       # REST 8312 NAO publicada (so o feed por arquivo importa no V2)
     volumes:
       - palworld_v2_data:/palworld
       - ./mod-server/PalProxVoiceServer:/mods/PalProxVoiceServer:ro
-      - ppv_feed:/feed                # feed compartilhado com o voz
+      - ppv_feed:/feed # feed compartilhado com o voz
 
   voice-v2:
     build:
-      context: ./server               # servidor de voz Go deste repo
+      context: ./server # servidor de voz Go deste repo
     restart: unless-stopped
     environment:
-      HTTP_PORT: "8080"               # interno (mapeado pra 8766 no host)
+      HTTP_PORT: "8080" # interno (mapeado pra 8766 no host)
       # IP publico do host p/ o audio UDP. "auto" = o voz descobre sozinho.
       # (Nome de container NAO serve: o cliente remoto esta fora do Docker.)
       PUBLIC_IP: "${PUBLIC_IP:-auto}"
       VOICE_PASSWORD: "${VOICE_PASSWORD:-}"
       SERVER_NAME: "OurWorld V2 TEST"
-      PPV_PLAYERS_FILE: "/feed/palproxvoice_players.txt"  # V2: feed autoritativo
+      PPV_PLAYERS_FILE: "/feed/palproxvoice_players.txt" # V2: feed autoritativo
       PPV_FEED_POLL_MS: "100"
     ports:
-      - "0.0.0.0:8766:8080"                   # sinalizacao ws (DESLOCADA do 8765)
+      - "0.0.0.0:8766:8080" # sinalizacao ws (DESLOCADA do 8765)
       - "0.0.0.0:50100-50110:50000-50010/udp" # midia (DESLOCADA do 50000-50010)
     volumes:
-      - ppv_feed:/feed:ro             # le o feed que o servidor de jogo escreve
+      - ppv_feed:/feed:ro # le o feed que o servidor de jogo escreve
 
 volumes:
   palworld_v2_data:
