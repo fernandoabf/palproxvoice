@@ -17,7 +17,8 @@ local UEHelpers = require("UEHelpers")
 
 local PUB     = (os.getenv("PUBLIC") or "C:\\Users\\Public")
 local OUT     = PUB .. "\\palproxvoice_players.txt"  -- feed pro voz (sobrescrito a cada tick)
-local RATE_MS = 50   -- 20 Hz (delay minimo; ajustavel)
+local RATE_MS = 200  -- 5 Hz. ERA 20Hz, mas o loop saturava o game thread no frame do spawn
+                     -- e o NetDriver dropava o cliente por timeout. 5Hz a voz tolera (interpola).
 
 local function try(fn)
     local ok, r = pcall(fn)
@@ -42,9 +43,13 @@ local function fguidOf(pc)
     return string.format("%08X%08X%08X%08X", a, b, c, d)
 end
 
+-- cache de PlayerControllers: NAO chamar FindAllOf todo tick (varre o GUObjectArray inteiro
+-- e satura o game thread no frame do spawn). Refaz a lista de tempos em tempos + no join.
+local pcs = {}
+local function refreshPCs() pcs = try(function() return FindAllOf("PlayerController") end) or {} end
+
 -- snapshot de todos os players -> linhas "fguid,x,y,z,yaw"
 local function snapshot()
-    local pcs = try(function() return FindAllOf("PlayerController") end) or {}
     local lines = {}
     for _, pc in ipairs(pcs) do
         if try(function() return pc:IsValid() end) then
@@ -69,8 +74,11 @@ end
 
 local lastCount = -1
 local warnedOpen = false
+local tickN = 0
 
 local function step()
+    tickN = tickN + 1
+    if tickN % 10 == 1 then refreshPCs() end   -- refaz a lista ~a cada 2s (10 ticks @ 5Hz), nao todo tick
     local lines = snapshot()
     local n = #lines
     -- grava o feed (sobrescreve) — o voz co-locado le isso
@@ -89,6 +97,7 @@ end
 try(function()
     RegisterHook("/Script/Engine.PlayerController:ServerAcknowledgePossession", function()
         log("join detectado (ServerAcknowledgePossession)")
+        refreshPCs()   -- novo player -> atualiza a lista na hora
     end)
     log("hook de join registrado")
 end)

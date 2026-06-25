@@ -42,7 +42,13 @@ echo "[ppv-v2] 3/5 instalando mod PalProxVoiceServer..."
 MODDST="$WIN64/ue4ss/Mods/PalProxVoiceServer"
 mkdir -p "$MODDST"
 cp -rf "$MOD_SRC/scripts" "$MODDST/"
-: > "$MODDST/enabled.txt"
+# interruptor pra ISOLAR: PPV_SERVERMOD=0 sobe o server SEM o mod (testa se o crash
+# no spawn e' o mod lendo pawn transitorio — pcall NAO pega crash nativo do UE4SS).
+if [ "${PPV_SERVERMOD:-1}" = "1" ]; then
+  : > "$MODDST/enabled.txt"; echo "[ppv-v2]   mod ON"
+else
+  rm -f "$MODDST/enabled.txt" 2>/dev/null || true; echo "[ppv-v2]   mod OFF (PPV_SERVERMOD=0, isolamento)"
+fi
 # UE4SS-settings.ini p/ HEADLESS: sem isso o GUI console do UE4SS tenta criar janela
 # num prefixo sem X e TRAVA o boot (RE-UE4SS #497) -> Pal.log nem e' criado. Espelha o
 # unico server UE4SS-sob-Proton comprovado (NewittAll). + salvaguarda #452.
@@ -103,6 +109,22 @@ fi
 PUBDIR="$STEAM_COMPAT_DATA_PATH/pfx/drive_c/users/Public"
 mkdir -p "$(dirname "$PUBDIR")"
 rm -rf "$PUBDIR" && ln -sfn "$FEED_DIR" "$PUBDIR"
+
+# NetDriver timeouts: o stall do game thread no spawn fazia o server perder a janela de
+# keep-alive -> o cliente dropava por timeout (~30s). Esticar segura a conexao durante o stall.
+ENGINE_INI="$PAL_DIR/Pal/Saved/Config/WindowsServer/Engine.ini"
+mkdir -p "$(dirname "$ENGINE_INI")"
+cat > "$ENGINE_INI" <<'EOF'
+[/Script/Engine.NetDriver]
+ConnectionTimeout=120.0
+InitialConnectTimeout=150.0
+KeepAliveTime=0.2
+
+[/Script/OnlineSubsystemUtils.IpNetDriver]
+ConnectionTimeout=120.0
+InitialConnectTimeout=150.0
+KeepAliveTime=0.2
+EOF
 
 echo "[ppv-v2] 5/5 lançando o servidor sob Proton (Xvfb :99 + cd Win64 + nome relativo)..."
 # Xvfb manual: NA PRATICA, com display o PalServer chegou ate o FTcpListener (init de rede).

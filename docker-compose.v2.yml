@@ -25,6 +25,7 @@ services:
       USEAUTH: "{V2_USEAUTH:-false}" # true = exige login no Proton (Steam) p/ entrar
       ADMIN_PASSWORD: "${V2_ADMIN_PASSWORD:-trocar-senha-forte}"
       SERVER_PASSWORD: "${V2_SERVER_PASSWORD:-}" # senha de ENTRAR (vazio = aberto)
+      PPV_SERVERMOD: "${V2_SERVERMOD:-1}" # 1 = mod ON; 0 = sobe SEM o mod (isolar crash)
     ports:
       - "0.0.0.0:8311:8311/udp" # jogo (DESLOCADA do prod 8211)
       - "0.0.0.0:27115:27115/udp" # query (DESLOCADA do 27015)
