@@ -3,6 +3,7 @@ module palproxvoice-companion
 go 1.23
 
 require (
+	github.com/0xrawsec/golang-etw v1.6.2
 	github.com/go-ole/go-ole v1.3.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/moutend/go-wca v0.3.0
@@ -12,6 +13,7 @@ require (
 
 require (
 	git.sr.ht/~jackmordaunt/go-toast/v2 v2.0.3 // indirect
+	github.com/0xrawsec/golang-utils v1.3.1 // indirect
 	github.com/bep/debounce v1.2.1 // indirect
 	github.com/godbus/dbus/v5 v5.1.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect

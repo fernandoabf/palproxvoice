@@ -82,6 +82,7 @@ func (a *App) startup(ctx context.Context) {
 	go fixAudioDucking()         // desliga o ducking de comunicacao no HKCU do usuario
 	startPalworldQuitWatch(ctx)  // sai junto com o Palworld (lifecycle colado ao jogo)
 	startChannelHotkey(ctx)      // Alt+V global cicla o canal de voz in-game
+	go StartServerIPWatchETW(ctx) // ETW: IP do server em tempo real (so com admin; degrada sem)
 }
 
 // domReady roda com a janela ja criada -> vira "tool window" (some da barra de
