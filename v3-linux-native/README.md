@@ -1,4 +1,6 @@
-# PalProxVoice — mod NATIVO de Linux (EXPERIMENTAL)
+# PalProxVoice V3 — mod NATIVO de Linux (EXPERIMENTAL)
+
+> **V1.5** = anti-spoof via REST (leve) · **V2** = mod server-side via UE4SS (Proton/Windows, **funciona**) · **V3** = ESTE — leitor de memória puro-Linux.
 
 Extrair pos+yaw+FGuid de TODOS os players direto do **PalServer NATIVO de Linux**
 (`PalServer-Linux-Shipping`, ELF, depot Linux) **sem UE4SS, sem Proton, sem Wine** —
@@ -28,10 +30,10 @@ Anexa um **script Frida** no PalServer-Linux rodando e acha o `GUObjectArray` + 
 
 ```bash
 # 1) sobe o PalServer NATIVO (thijsvanloef) + toolbox Frida (mesma PID namespace)
-docker compose -f linux-native/docker-compose.yml up -d
+docker compose -f v3-linux-native/docker-compose.yml up -d
 # 2) entra com um player no server (porta 8411) pra ter PlayerControllers vivos
 # 3) exec no toolbox e anexa o Frida no processo do PalServer
-docker compose -f linux-native/docker-compose.yml exec frida bash
+docker compose -f v3-linux-native/docker-compose.yml exec frida bash
 #   dentro:
 frida -n PalServer-Linux-Shipping-Cmd -l /probe.js   # ou: frida -p <PID> -l /probe.js
 ```
