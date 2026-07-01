@@ -1,14 +1,23 @@
 # Roadmap — PalProxVoice
 
-## Estado atual — `v0.11.0-alpha` (validado in-game)
+## Estado atual (`develop`)
 
-Produto funcionando ponta-a-ponta, **2 pessoas reais pela internet**:
+Produto funcionando ponta-a-ponta, validado com pessoas reais pela internet — bem além do MVP:
 
-- **M1** — mod UE4SS lê posição+direção e escreve em `C:\Users\Public\palproxvoice_pos.txt`. ✅ validado no jogo.
-- **M2** — servidor de voz (Go/pion, SFU + relay de posição) na VPS, atrás de TLS + UDP. ✅ no ar.
-- **M3** — companion (Wails, app único) lê a posição e espacializa em 3D (Web Audio/HRTF); auto-conecta. ✅ proximidade validada in-game.
+| Camada | O que | Status |
+|---|---|:---:|
+| **Base + V1** | voz 3D + auto-connect (IP + **probe da porta**, zero digitação) | 🟢 validado in-game |
+| **V1.5** | anti-spoof por REST (`verify`/`strict`; mantém Z+yaw do cliente) | 🟢 codado (off por padrão) |
+| **V2** | mod UE4SS no servidor (Proton) — pos+yaw+FGuid autoritativos @5Hz | 🟢 **funciona** (server escuta + mod carrega + feed grava) |
+| **Canais de voz** | proximidade / guild / global + **hotkey global Alt+V** | 🟢 construído |
+| **ETW** | IP do server em tempo real (UDP do kernel) | 🟢 construído (precisa admin) |
+| **Game Pass (WinGDK)** | UE4SS + mod cliente rodam nele | 🟢 confirmado |
+| **Auto-guild** | plumbing (companion) + probe de descoberta | 🟡 falta a leitura real (logs do `probe_guild.lua`) |
+| **V3 (Linux nativo)** | leitor de memória externo (sem Proton/Wine) | 🔬 só scaffold + plano |
 
-Distribuição: release com `palproxvoice.exe` + bundle `PalProxVoice-UE4SS.zip` (UE4SS v3.0.1 exato + mod).
+Distribuição: release com `palproxvoice.exe` + bundle `PalProxVoice-UE4SS.zip` (UE4SS + mod).
+
+> As seções abaixo são o **planejamento histórico** (como chegamos aqui) + o que ainda falta. Para o estado real, use a tabela acima.
 
 ## M4 — polimento (a fazer)
 
@@ -73,7 +82,9 @@ Guard-rails do `verify` (senão bane jogador honesto):
 - nunca banir em erro/lag da REST
 - ban escalonado por `userId`+`ip`
 
-### V2 — servidor (100% server-side) — *o mod a criar*
+### V2 — servidor (100% server-side) ✅ **funciona** (experimental)
+
+> **Feito.** `mod-server/PalProxVoiceServer` roda no PalServer Windows **sob Proton** no Linux (imagem `deploy/v2-experimental/linux`), lê pos+yaw+FGuid+nome de todos e escreve o feed `palproxvoice_players.txt`; a voz consome via `PPV_PLAYERS_FILE` (`server/antispoof_v2.go`). Toda a fragilidade do Proton foi resolvida (ver CHANGELOG). Falta só o teste de voz com 2 players. O plano original abaixo continua como referência.
 
 **Objetivo:** posição **e yaw** vêm do servidor, autoritativos. **Cliente não precisa de UE4SS** — só o companion (áudio) + identidade.
 
@@ -87,14 +98,19 @@ Guard-rails do `verify` (senão bane jogador honesto):
 ### Tarefas de validação (antes de codar fundo)
 
 - [x] mod lê a **própria identidade** ✅ — FGuid via `ps.IndividualHandleId.PlayerUId` (probe in-game), bate com o `playerId` da REST
-- [ ] V2: confirmar UE4SS server-side sob Proton no Palworld (AOB / `StaticConstructObject`)
-- [ ] V2: ler `yaw` (control rotation) de cada player no servidor
+- [x] V2: UE4SS server-side sob Proton no Palworld ✅ — AOB casa (build Okaetsu `experimental-palworld`); server escuta + mod carrega + feed grava
+- [x] V2: ler pos+`yaw`+FGuid+**nome** de cada player no servidor ✅ — feed `palproxvoice_players.txt` @5Hz
+- [ ] V2: teste de voz com 2 players usando a posição autoritativa do feed
 
 ## Backlog — canais de voz (aprendizado do concorrente PalVoice)
 
 O PalVoice tem **proximidade + global + guilda**; nós só temos proximidade (pool único).
 
-### Os 4 canais — _planejado_
+### Canais de voz ✅ **construído** — proximidade / guild / global
+
+> **Feito** (a versão de 3 canais). O peer manda `meta{guild,channel}`; o servidor repassa (`peermeta`); o companion mistura por canal — **proximidade = panner 3D**, **guild/global = som plano** (guild só entre a mesma guild). Troca de canal **in-game** por **hotkey global Alt+V** (`RegisterHotKey`). Guild = auto (mod, em finalização) + código manual. O plano original de **4 canais** (separar guilda-local × guilda-global) fica abaixo como evolução futura.
+
+<details><summary>Plano original (4 canais)</summary>
 
 Dois eixos: **quem ouve** (todos / só guilda) × **alcance** (proximidade / global):
 
@@ -123,7 +139,9 @@ Dois eixos: **quem ouve** (todos / só guilda) × **alcance** (proximidade / glo
   validar a associação (guilda, e o "está mesmo no servidor") pela fonte autoritativa
   (REST/mod), nunca pelo que o cliente afirma.
 
-### Push-to-talk (PTT) — _planejado_
+</details>
+
+### Push-to-talk (PTT) — _planejado_ (a infra de hotkey global já existe: Alt+V troca canal)
 
 **Objetivo:** falar segurando uma tecla, como alternativa ao voice-activity/gate.
 
@@ -140,6 +158,14 @@ Dois eixos: **quem ouve** (todos / só guilda) × **alcance** (proximidade / glo
 ### Outros (depois, menor prioridade)
 
 - **Party/grupo** — canal por código pra um subconjunto, sem ser a guilda inteira.
+
+## ETW — IP do servidor em tempo real ✅ **construído**
+
+O companion lê o UDP do processo do Palworld no kernel (`Microsoft-Windows-Kernel-Network`) via `golang-etw`, filtra pelo PID e pega o IP de destino público mais frequente → escreve no `palproxvoice_server.txt`, que o `DetectGameServerIP()` (fonte "live") já consome com prioridade. Fecha a fonte de IP **realtime** que faltava (a `GameServerIPLive`). **Precisa de admin** (sessão ETW de kernel); sem admin, degrada pras outras fontes (save/ini). Fica ligado no startup.
+
+## V3 — Linux nativo (sem Proton/UE4SS) — 🔬 pesquisa
+
+A mesma posição autoritativa do V2, mas lendo direto do **PalServer nativo de Linux** (sem `.exe` Windows, sem Proton, sem Wine) — via um **leitor de memória externo** (`process_vm_readv` + AOB scan do `GUObjectArray`). Pesquisa concluída: é o único caminho que entrega pos+yaw+FGuid a 5-20Hz no nativo (REST não tem yaw/Z; Blueprint é sandbox; sniff é inviável). **Só o scaffold + plano existem** (harness `thijsvanloef`+Frida + `probe.js` de recon); o leitor de verdade é o trabalho difícil (RE iterando contra o binário ao vivo). Plano completo: [`v3-linux-native/`](../v3-linux-native/) na branch `experimental/v3-linux-native`.
 
 ## Decisões travadas
 

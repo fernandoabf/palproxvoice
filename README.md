@@ -2,51 +2,84 @@
 
 # 🎙️ PalProxVoice
 
-**Self-hosted 3D proximity voice chat for Palworld**
+**Self-hosted 3D proximity voice chat for Palworld.**
 
-_Think Simple Voice Chat (Minecraft), but for Palworld — you hear whoever's near you in the game world, louder the closer they are, with real direction (3D / HRTF audio). No rooms, no channels, no third-party service: everything runs on your own infra._
+_You hear whoever's near you in the game — louder the closer they are, with real direction (3D / HRTF audio). Like Minecraft's Simple Voice Chat, but for Palworld. No rooms, no third-party service: everything runs on your own infra._
 
 ![status](https://img.shields.io/badge/status-active%20alpha-2ea44f)
 ![platform](https://img.shields.io/badge/platform-Windows%20%C2%B7%20Linux-1f6feb)
 ![game](https://img.shields.io/badge/Palworld-Steam%20%C2%B7%20Game%20Pass-orange)
 ![self-hosted](https://img.shields.io/badge/self--hosted-yes-success)
-![voice](https://img.shields.io/badge/audio-3D%20HRTF%20%2B%20Opus-blueviolet)
+![audio](https://img.shields.io/badge/audio-3D%20HRTF%20%2B%20Opus-blueviolet)
 ![license](https://img.shields.io/badge/license-see%20LICENSE-lightgrey)
 
-🇧🇷 **[Leia em Português](README.pt-BR.md)** · [Releases](../../releases) · [CHANGELOG](CHANGELOG.md) · [Architecture](docs/ARCHITECTURE.md) · [Roadmap](docs/ROADMAP.md)
+🇧🇷 **[Leia em Português](README.pt-BR.md)** · [⬇️ Download](../../releases) · [📝 Changelog](CHANGELOG.md) · [🏗️ Architecture](docs/ARCHITECTURE.md) · [🗺️ Roadmap](docs/ROADMAP.md)
 
 </div>
 
-> 🎥 **Demo:** _(coming soon — ~20s clip of the 3D proximity voice; listen with **headphones** 🎧)_
+> 🎥 **Demo:** _(coming soon — ~20s of the 3D proximity voice; use **headphones** 🎧)_
 
 ---
 
-## 🧩 Versions / Milestones
+## 🚀 Start here — pick your path
 
-PalProxVoice grows in layers. The **base** (proximity voice) works on every server; each version adds **better anti-spoof / lower latency** without breaking the ones below it.
-
-| Tag | Status | What it adds | Anti-spoof | Needs | Lives in |
-|:---:|:---:|---|:---:|---|---|
-| **Base + V1** | 🟢 **working** | proximity voice + **auto-connect** (companion finds the server by your IP and **probes the voice port** by itself) | — (trusts client) | client mod + companion | `companion/` · `server/` · `mod/` |
-| **V1.5** | 🟢 **coded** _(off by default)_ | **anti-spoof via REST** — reconciles client position with the Palworld REST API (`verify`/`strict`). A spoofer can't teleport into your ears. Keeps client `Z`+`yaw` (REST has neither). | ✅ horizontal | + Palworld REST reachable internally | `server/antispoof.go` · `PPV_AUTH_MODE` |
-| **V2** | 🟢 **working** _(experimental)_ | **server-side authoritative** pos+yaw+FGuid @ 5Hz, read by a **UE4SS mod on the server** (Windows `.exe` under **Proton** on Linux). Zero client position trust. | ✅✅ full 3D | + UE4SS on the dedicated server | `mod-server/` · `deploy/v2-experimental/` · `docker-compose.v2.yml` |
-| **V3** | 🔬 **research** _(Phase 0)_ | V2's authoritative data but on the **NATIVE Linux** server — an **external memory reader** (`process_vm_readv` + AOB scan), **no UE4SS, no Proton, no Wine**. | ✅✅ full 3D | + `CAP_SYS_PTRACE` | branch [`experimental/v3-linux-native`](../../tree/experimental/v3-linux-native) |
-
-> **Which do I want?** Most people: **Base + V1** (it just works). Want cheat-proof proximity on a normal server: turn on **V1.5**. Want authoritative 3D positions with minimal delay: **V2** (validated end-to-end). **V3** is the pure-Linux experiment for the brave.
+| You are… | Go to |
+|---|---|
+| 🎮 **I just want to talk to my friends** | **[For players](#-for-players)** — download, install, play (~2 min) |
+| 🖥️ **I run a Palworld server** | **[For server owners](#-for-server-owners)** |
+| 🧑‍💻 **I want to build / contribute** | **[For developers](#-for-developers)** |
 
 ---
 
-## ✨ Features
+## 🎮 For players
 
-- **3D positional voice** (Web Audio / HRTF) — left/right/front/back + distance, following your in-game camera.
-- **Zero-config auto-connect** — the companion detects the server IP from the game and **finds the voice port by itself** (probe). No typing addresses.
-- **Native low-latency mic capture** (WASAPI) — does **not** degrade the rest of your system audio (the classic browser/`getUserMedia` pitfall).
-- **Optional AI noise suppression** (RNNoise) + noise gate + compressor + a "hear my mic" monitor.
-- **Pick your microphone and output by name.**
-- **Built for bad internet** — Opus FEC + DTX, automatic **adaptive bitrate**, and **auto-reconnect** on drops.
-- **No rooms** — one shared pool per server + password; who you hear is 100% proximity.
-- **Anti-spoof, layered** — from REST reconciliation (V1.5) to fully server-authoritative positions (V2/V3).
-- **One-click installer** (UE4SS + mod + companion + auto-start). Works on **Steam and Game Pass** (WinGDK).
+**You need:** Palworld (**Steam _or_ Game Pass**) + headphones.
+
+1. Download **`PalProxVoice-Setup.exe`** from the [latest release](../../releases).
+2. **Double-click it.** It finds Palworld on its own, installs everything, and sets it to open with the game.
+3. **Open Palworld and play.** The voice **connects by itself** — no IP, no password, no port to type. Use headphones. 🎧
+
+That's it. Whoever's near you in the world, you hear — louder the closer, and with direction (left/right/front/back).
+
+> **Got "Windows protected your PC"?** That's just Windows warning about new apps that aren't paid-code-signed. Click **More info → Run anyway**. It's safe (the code is open-source).
+
+<details><summary><b>No installer? (manual setup)</b></summary>
+
+From the same release, grab `PalProxVoice-UE4SS.zip` (extract into `Pal\Binaries\<Win64 or WinGDK>\`) and `palproxvoice.exe` (the companion). Run the companion — it auto-connects the same way.
+</details>
+
+### 🗣️ Voice channels
+Like the game's chat. Press **Alt+V** while playing to switch which channel you talk on:
+
+- **📍 Proximity** _(default)_ — hear who's near you, in 3D.
+- **🛡️ Guild** — talk to your guild, at any distance.
+- **🌐 Global** — talk to the whole server.
+
+You always **hear** guild (same guild) and global; proximity only when close.
+
+### ✨ What you get
+- **3D positional voice** — direction + distance, following your in-game camera.
+- **Zero setup** — auto-connects to your current server. Nothing to type.
+- **Doesn't wreck your other audio** — native mic capture (the classic browser voice-chat pitfall is fixed).
+- **Optional AI noise suppression** (RNNoise), noise gate, compressor, "hear my mic" monitor.
+- **Pick your mic and output by name.**
+- **Built for bad internet** — auto-adjusting quality + auto-reconnect on drops.
+- **Runs as an overlay** — appears with the game, hides when you close it.
+
+---
+
+## 🧩 Versions
+
+PalProxVoice grows in layers. The **base** works on any server; each version adds **stronger anti-cheat / lower delay** without breaking the ones below. As a player you don't pick — the server owner does.
+
+| Tag | Status | What it adds | Anti-spoof | Server needs |
+|:---:|:---:|---|:---:|---|
+| **Base + V1** | 🟢 **working** | proximity voice + **auto-connect** (finds the server IP and the voice port by itself) | — _trusts client_ | just the voice container |
+| **V1.5** | 🟢 **coded** _(opt-in)_ | **REST reconciliation** — a spoofer can't teleport into your ears. Keeps client `Z`+`yaw`. | ✅ horizontal | + Palworld REST reachable internally |
+| **V2** | 🟢 **working** _(experimental)_ | **server-side authoritative** pos+yaw+FGuid @5Hz via a **UE4SS mod on the server** (Windows `.exe` under **Proton** on Linux). Zero client trust. | ✅✅ full 3D | + UE4SS on the dedicated server |
+| **V3** | 🔬 **research** _(scaffold only)_ | V2's data but on the **native Linux** server — an external memory reader, **no UE4SS / Proton / Wine**. | ✅✅ full 3D | _(not built yet)_ |
+
+> **Which should I run?** Most people: **Base + V1** (it just works). Cheat-proof proximity on a normal server: turn on **V1.5**. Authoritative 3D positions with minimal delay: **V2**. **V3** is an early experiment — see [its branch](../../tree/experimental/v3-linux-native).
 
 ---
 
@@ -54,53 +87,41 @@ PalProxVoice grows in layers. The **base** (proximity voice) works on every serv
 
 Three pieces. The game never talks to the voice server directly — the companion bridges it.
 
-| # | Piece | Where | What it does |
-|---|------|------|-----------|
-| **mod** | UE4SS (Lua) | each player's PC (Windows/Game Pass) | reads position + facing + FGuid, writes local files |
-| **companion** | Wails app (Go + WebView2) | each player's PC | reads the position, sends the mic, receives others and **spatializes in 3D** (Web Audio / HRTF); **auto-connects** |
-| **server** | Go + pion/webrtc | owner's VPS | SFU: each mic uploads once and is relayed to all; position relay + anti-spoof. No rooms. |
+| Piece | Where | What it does |
+|---|---|---|
+| **mod** (UE4SS/Lua) | each player's PC (Steam **or** Game Pass) | reads position + facing + identity, writes local files |
+| **companion** (Wails app) | each player's PC | reads the position, sends the mic, receives others, **spatializes in 3D**, and **auto-connects** |
+| **voice server** (Go/pion) | owner's VPS | SFU: each mic uploads once and is relayed to all; position + channel relay. No rooms. |
 
-Each audio track carries `StreamID = peer id`, so the companion matches **audio ↔ position**. With **V2/V3**, the position becomes **server-authoritative** (a mod/reader on the server writes a feed the voice consumes), so the client can't lie about where it is.
-
----
-
-## 🎮 For players
-
-1. Download the installer from the [latest release](../../releases) (`PalProxVoice-Setup.exe`).
-2. Run it — it finds Palworld (or click **Search a drive** to scan), installs UE4SS + the mod + the companion, sets up auto-start. Works on **Steam** and **Game Pass / Microsoft Store** (WinGDK).
-3. Launch the game. The companion **finds the server by itself** (IP + voice port) and connects. Use headphones. 🎧
-
-> **"Windows protected your PC"?** SmartScreen warning that the app isn't code-signed yet — normal for a new/open-source binary. **More info → Run anyway.** (Code signing is on the roadmap.)
-
-No installer? Grab `PalProxVoice-UE4SS.zip` (UE4SS + mod, extract into `Pal\Binaries\<Win64|WinGDK>\`) and `palproxvoice.exe` (companion) from the release.
+Each audio track carries `StreamID = peer id`, so the companion matches **audio ↔ position**. With **V2/V3**, the position is **server-authoritative** (a mod/reader on the server writes a feed the voice consumes), so the client can't lie about where it is.
 
 ---
 
 ## 🖥️ For server owners
 
-The voice server is a Go container. Run it next to your Palworld (same VPS or another).
+The voice server is one Go container. Run it next to your Palworld (same VPS or another). Everyone who joins with the password is one pool; who you hear is 100% proximity/channel — no rooms.
 
-### Base / V1 (everyone)
+### 1️⃣ Base / V1 — everyone starts here
 ```bash
-cp .env.example .env          # set VOICE_PASSWORD and PUBLIC_IP=<vps-public-ip> (or "auto")
+cp .env.example .env          # set VOICE_PASSWORD and PUBLIC_IP=<vps-ip>  (or PUBLIC_IP=auto)
 docker compose up -d --build
 ```
-- The companion **auto-detects** the game IP and **probes** common voice ports (`8765`, `8766`, …) — expose the voice on one of them.
-- **Media (audio):** open **UDP 50000–50010** in the firewall. `PUBLIC_IP` makes pion announce your IP (no TURN). `PUBLIC_IP=auto` self-detects.
-- **Mic in a browser** needs a secure context — put the voice behind a TLS domain (`wss://`). The desktop companion connects by direct IP.
+- **Firewall:** open **UDP 50000–50010** (the audio). `PUBLIC_IP` makes the server announce your IP (no TURN); `auto` self-detects.
+- **Auto-connect:** the companion detects the game's IP and **probes common voice ports** (8765, 8766, …) — just expose the voice on one of them.
+- **Browser mic** needs HTTPS (`wss://`, e.g. behind Dokploy). The desktop companion connects by direct IP — no TLS needed.
 
-### V1.5 — anti-spoof (REST)
-Set `PPV_AUTH_MODE=verify` (or `strict`) + `PPV_REST_URL`/`PPV_REST_PASS` so the voice reaches the **Palworld REST API internally** (admin API — **never** expose it publicly). The voice reconciles each player's reported position with the REST and ignores sustained lies. See [docs/ANTI-SPOOF-DEPLOY.md](docs/ANTI-SPOOF-DEPLOY.md).
+### 2️⃣ V1.5 — anti-spoof (REST), opt-in
+Set in `.env`: `PPV_AUTH_MODE=verify` (or `strict`) + `PPV_REST_URL` / `PPV_REST_PASS` so the voice reaches the **Palworld REST API internally** (it's an admin API — **never** expose it publicly). The voice reconciles each player's reported position with the REST and ignores sustained lies; it keeps the client's height + facing (the REST has neither). → [docs/ANTI-SPOOF-DEPLOY.md](docs/ANTI-SPOOF-DEPLOY.md)
 
-### V2 — server-side authoritative (experimental)
-A **UE4SS mod on the dedicated server** writes a `fguid,x,y,z,yaw,name` feed @ 5Hz; the voice consumes it (zero client trust). On Linux the Windows `.exe` runs under **Proton**. One-shot deploy (Dokploy or local):
+### 3️⃣ V2 — server-side authoritative (experimental)
+A **UE4SS mod on the dedicated server** writes a `fguid,x,y,z,yaw,name` feed @5Hz; the voice consumes it (zero client trust). On Linux the Windows `.exe` runs under **Proton**. One command (Dokploy or local):
 ```bash
 docker compose -f docker-compose.v2.yml up -d --build
 ```
-Full notes (the Proton gotchas we solved: steamclient symlink, headless GUI console, esync/fsync, NetDriver timeout): [deploy/v2-experimental/README.md](deploy/v2-experimental/README.md).
+> The fragile part is **UE4SS-under-Proton** — we solved the whole chain (steamclient symlink, headless GUI console, esync/fsync, NetDriver timeout, mod rate). Full notes + the Windows-native path: **[deploy/v2-experimental/README.md](deploy/v2-experimental/README.md)**.
 
-### V3 — native Linux (research)
-No Proton/UE4SS — an external memory reader on the native `thijsvanloef`-style server. See the [`experimental/v3-linux-native`](../../tree/experimental/v3-linux-native) branch.
+### 🗣️ Voice channels (any version)
+Proximity / guild / global work out of the box. **Guild membership** comes from the player's mod (auto) or a shared **guild code** in the companion (fallback). No extra server config.
 
 ---
 
@@ -109,15 +130,16 @@ No Proton/UE4SS — an external memory reader on the native `thijsvanloef`-style
 ### Repo layout
 ```
 mod/PalProxVoice/        UE4SS mod (CLIENT) — reads pos+yaw+FGuid -> C:\Users\Public\palproxvoice_*.txt
-mod-server/              [V2] UE4SS mod (SERVER) — authoritative pos+yaw+FGuid feed @ 5Hz
-companion/               Wails desktop app (Go+WebView2) — 3D voice + auto-connect (IP detect + port probe)
-server/                  Go voice server — SFU + position relay + anti-spoof (V1.5 REST, V2 feed)
-deploy/v2-experimental/  [V2] Palworld server MODADO (Proton+UE4SS): linux/ (Docker) + windows/ (install.ps1)
-v3-linux-native/         [V3] native-Linux memory reader (Phase 0) — on the experimental/v3-linux-native branch
+mod-server/              [V2] UE4SS mod (SERVER) — authoritative pos+yaw+FGuid+name feed @5Hz
+companion/               Wails app (Go+WebView2) — 3D voice, auto-connect (IP detect + port probe + ETW),
+                         voice channels, native WASAPI mic
+server/                  Go voice server — SFU + position/channel relay + anti-spoof (V1.5 REST, V2 feed)
+deploy/v2-experimental/  [V2] Palworld MODDED server (Proton+UE4SS): linux/ (Docker) + windows/ (install.ps1)
+v3-linux-native/         [V3] native-Linux memory reader (scaffold) — on the experimental/v3-linux-native branch
 installer/               Inno Setup installer (UE4SS + mod + companion + auto-start)
 docs/                    ARCHITECTURE · ROADMAP · ANTI-SPOOF-DEPLOY
 docker-compose.yml       voice server (Base / V1 / V1.5)
-docker-compose.v2.yml    [V2] Palworld modado (Proton) + voice — for Dokploy
+docker-compose.v2.yml    [V2] Palworld modded (Proton) + voice — for Dokploy
 ```
 
 ### Run locally (no game, no VPS)
@@ -128,24 +150,26 @@ docker compose up --build     # voice server only (API; no built-in web client)
 The server is **API-only** — connect with the **companion** pointed at `localhost:<HTTP_PORT>`. You need two clients (two machines) to hear the SFU + spatialization.
 
 ### Build the companion
-Windows (WebView2) or via GitHub Actions on a `v*` tag push. See [companion/BUILD.md](companion/BUILD.md). Go tests: `go test ./...` in `companion/`.
+Windows (WebView2), or via GitHub Actions on a `v*` tag. See [companion/BUILD.md](companion/BUILD.md). Go tests: `go test ./...` in `companion/`.
 
 ### Contributing
 Issues and PRs welcome. The coupling with the game is thin and isolated on purpose (Palworld 1.0 ships 2026-07-10 and big updates break UE4SS mods) — check the locked decisions in the [ROADMAP](docs/ROADMAP.md) before touching `mod/`.
 
 ---
 
-## 🗺️ Roadmap
+## 🗺️ Roadmap (short)
 
-| | Milestone | Status |
-|:---:|---|:---:|
-| **V1** | auto-connect: the companion finds the server by your IP + **probes the voice port** | 🟢 done |
-| **V1.5** | anti-spoof: source-agnostic protocol + REST reconciliation (`verify`/`strict`) | 🟢 coded |
-| **V2** | server-side: UE4SS mod on the server (Proton) with authoritative pos+yaw; client needs no UE4SS for position | 🟢 working |
-| **V3** | native Linux: external memory reader (`process_vm_readv`), no Proton/Wine | 🔬 research |
-| **next** | code signing · push-to-talk · in-game voice-address announce (server → client RPC) | 🔜 planned |
+| Milestone | What | Status |
+|---|---|:---:|
+| **V1** | auto-connect: find the server by IP + **probe the voice port** | 🟢 done |
+| **V1.5** | anti-spoof via REST reconciliation (`verify`/`strict`) | 🟢 coded |
+| **V2** | server-side authoritative pos+yaw via UE4SS (Proton) | 🟢 working |
+| **Channels** | proximity / guild / global + global push-to-switch (Alt+V) | 🟢 built |
+| **Realtime IP** | ETW reads the current server IP live from kernel UDP | 🟢 built |
+| **V3** | native-Linux external memory reader (no Proton/Wine) | 🔬 research |
+| **next** | code signing · auto-guild finalize · in-game voice-address announce | 🔜 planned |
 
-Details in [docs/ROADMAP.md](docs/ROADMAP.md).
+Full detail in [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## 📄 License
 
