@@ -1,5 +1,6 @@
 # PalProxVoice V2 (EXPERIMENTAL) — servidor Palworld MODADO (Proton+UE4SS) + voz.
-# ⚠️ NÃO TESTADO. Rode num host DESCARTÁVEL. Portas DESLOCADAS pra coexistir com teu
+# ⚠️ Server-side validado in-game (server escuta + mod + feed); voz e2e com 2 players NÃO
+# testada. Rode num host DESCARTÁVEL. Portas DESLOCADAS pra coexistir com teu
 # Palworld de produção (game 8311, query 27115, REST 8312, RCON 25675; voz 8766 + UDP 50100-50110).
 #
 # Suba daqui:  docker compose -f deploy/v2-experimental/linux/docker-compose.yml up -d --build
@@ -34,8 +35,8 @@ services:
     container_name: palproxvoice-v2
     restart: unless-stopped
     environment:
-      HTTP_PORT: "8080"               # interno (mapeado pra 8766 no host)
-      PUBLIC_IP: "${PUBLIC_IP:-}"     # IP público do host (pro áudio UDP)
+      # o server escuta 8080 no container (WS_PORT default), mapeado pra 8766 no host abaixo.
+      PUBLIC_IP: "${PUBLIC_IP:-auto}"  # IP público do host p/ o áudio UDP; auto = descobre sozinho
       VOICE_PASSWORD: "${VOICE_PASSWORD:-}"
       SERVER_NAME: "OurWorld V2 TEST"
       # V2: consome o feed autoritativo do mod server-side

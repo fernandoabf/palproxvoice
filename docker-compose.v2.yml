@@ -1,6 +1,7 @@
 # PalProxVoice V2 (EXPERIMENTAL) — compose na RAIZ pro Dokploy (caminhos limpos ./).
-# ⚠️ NÃO TESTADO. Servidor Palworld MODADO (Proton+UE4SS) + voz, em PORTAS DESLOCADAS
-# pra coexistir com teu Palworld de produção.
+# ⚠️ Server-side VALIDADO in-game (server escuta + mod carrega + feed grava pos+FGuid);
+# a voz ponta-a-ponta com 2 players ainda NÃO foi testada. PORTAS DESLOCADAS pra coexistir
+# com teu Palworld de produção. Rode num host descartável.
 #
 # Dokploy: Branch = experimental/v2-serverside ; Compose Path = ./docker-compose.v2.yml
 # Local:   docker compose -f docker-compose.v2.yml up -d --build
@@ -22,7 +23,6 @@ services:
       QUERY_PORT: "27115"
       REST_PORT: "8312"
       RCON_PORT: "25675"
-      USEAUTH: "{V2_USEAUTH:-false}" # true = exige login no Proton (Steam) p/ entrar
       ADMIN_PASSWORD: "${V2_ADMIN_PASSWORD:-trocar-senha-forte}"
       SERVER_PASSWORD: "${V2_SERVER_PASSWORD:-}" # senha de ENTRAR (vazio = aberto)
       PPV_SERVERMOD: "${V2_SERVERMOD:-1}" # 1 = mod ON; 0 = sobe SEM o mod (isolar crash)
@@ -40,7 +40,7 @@ services:
       context: ./server # servidor de voz Go deste repo
     restart: unless-stopped
     environment:
-      HTTP_PORT: "8080" # interno (mapeado pra 8766 no host)
+      # o server escuta 8080 no container (WS_PORT default), mapeado pra 8766 no host abaixo.
       # IP publico do host p/ o audio UDP. "auto" = o voz descobre sozinho.
       # (Nome de container NAO serve: o cliente remoto esta fora do Docker.)
       PUBLIC_IP: "${PUBLIC_IP:-auto}"

@@ -1,12 +1,13 @@
 # PalProxVoice V2 — deploy do servidor MODADO (EXPERIMENTAL)
 
 Sobe o servidor Palworld com **UE4SS + o mod `PalProxVoiceServer`** (lê pos+yaw+FGuid
-autoritativos a 20Hz → feed `palproxvoice_players.txt`) e o **servidor de voz** consumindo
+autoritativos a 5Hz → feed `palproxvoice_players.txt`) e o **servidor de voz** consumindo
 esse feed (`PPV_PLAYERS_FILE`). É o V2 estilo Simple Voice Chat: posição vem do servidor,
 delay mínimo, anti-spoof de graça.
 
-> ⚠️ **EXPERIMENTAL / NÃO TESTADO.** A parte frágil é o **UE4SS no servidor** (no Linux =
-> Proton). Rode num **host descartável** primeiro, não no teu Palworld de produção.
+> ⚠️ **EXPERIMENTAL.** O server-side foi validado in-game (o servidor escuta, o mod carrega,
+> o feed grava pos+FGuid); a voz ponta-a-ponta com 2 players ainda NÃO foi testada. A parte
+> frágil é o **UE4SS no servidor** (no Linux = Proton). Rode num **host descartável** primeiro.
 > ⏰ Palworld 1.0 (2026-07-10) provavelmente quebra mods no day-one — re-valide depois.
 
 ## Portas DESLOCADAS (pra coexistir com teu prod)

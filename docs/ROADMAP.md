@@ -8,7 +8,7 @@ Produto funcionando ponta-a-ponta, validado com pessoas reais pela internet — 
 |---|---|:---:|
 | **Base + V1** | voz 3D + auto-connect (IP + **probe da porta**, zero digitação) | 🟢 validado in-game |
 | **V1.5** | anti-spoof por REST (`verify`/`strict`; mantém Z+yaw do cliente) | 🟢 codado (off por padrão) |
-| **V2** | mod UE4SS no servidor (Proton) — pos+yaw+FGuid autoritativos @5Hz | 🟢 **funciona** (server escuta + mod carrega + feed grava) |
+| **V2** | mod UE4SS no servidor (Proton) — pos+yaw+FGuid autoritativos @5Hz | 🟡 **server-side funciona** (server escuta + mod carrega + feed grava; voz e2e não testada) |
 | **Canais de voz** | proximidade / guild / global + **hotkey global Alt+V** | 🟢 construído |
 | **ETW** | IP do server em tempo real (UDP do kernel) | 🟢 construído (precisa admin) |
 | **Game Pass (WinGDK)** | UE4SS + mod cliente rodam nele | 🟢 confirmado |
@@ -28,7 +28,7 @@ Núcleo pronto; tudo abaixo é conforto:
 - **Config embutida (sem o amigo configurar)** — companion lê um `config.json` ao lado do `.exe`; você preenche uma vez e distribui junto, amigo só abre e conecta.
 - **Fechar a voz ao sair do servidor** — posição parada por N s → desconecta sozinho.
 - **Escolher microfone + saída de áudio** — na config.
-- **Instalador único** ✓ — `PalProxVoice-Installer.zip`: acha o Palworld (Steam auto ou pergunta), instala UE4SS+mod+companion+config e configura **auto-start**. Você preenche o `config.json` e distribui.
+- **Instalador único** ✓ — `PalProxVoice-Setup.exe`: acha o Palworld (Steam auto ou pergunta), instala UE4SS+mod+companion+config e configura **auto-start**. Você preenche o `config.json` e distribui.
 - **Nomes reais** _(depois)_ — o mod escreve o nome do player; peers aparecem com nome. Mais simples que REST.
 - **Auto-detectar IP** ✓ _(Direct Connect)_ — companion lê `InputIPAddress` do `GameUserSettings.ini` → conecta em `ws://<IP>:8765`. Só Direct Connect (lista do Steam não atualiza esse campo; senha não fica salva, sem `Pal.log`); **fallback = seletor manual**.
 - **REST API** — _ressuscitada_, mas como fonte de **anti-spoof** na V1.5 (reconciliação `verify` / autoritativo `strict`) e **presença/IP-match**, não como posição primária. Ver a seção de releases (V1 → V1.5 → V2) abaixo.
@@ -82,9 +82,9 @@ Guard-rails do `verify` (senão bane jogador honesto):
 - nunca banir em erro/lag da REST
 - ban escalonado por `userId`+`ip`
 
-### V2 — servidor (100% server-side) ✅ **funciona** (experimental)
+### V2 — servidor (100% server-side) 🟡 **server-side funciona** (experimental)
 
-> **Feito.** `mod-server/PalProxVoiceServer` roda no PalServer Windows **sob Proton** no Linux (imagem `deploy/v2-experimental/linux`), lê pos+yaw+FGuid+nome de todos e escreve o feed `palproxvoice_players.txt`; a voz consome via `PPV_PLAYERS_FILE` (`server/antispoof_v2.go`). Toda a fragilidade do Proton foi resolvida (ver CHANGELOG). Falta só o teste de voz com 2 players. O plano original abaixo continua como referência.
+> **Feito (server-side).** `mod-server/PalProxVoiceServer` roda no PalServer Windows **sob Proton** no Linux (imagem `deploy/v2-experimental/linux`), lê pos+yaw+FGuid de todos e escreve o feed `palproxvoice_players.txt` (`fguid,x,y,z,yaw`); a voz consome via `PPV_PLAYERS_FILE` (`server/antispoof_v2.go`). Toda a fragilidade do Proton foi resolvida (ver CHANGELOG). **Falta o teste de voz ponta-a-ponta com 2 players.** O plano original abaixo continua como referência.
 
 **Objetivo:** posição **e yaw** vêm do servidor, autoritativos. **Cliente não precisa de UE4SS** — só o companion (áudio) + identidade.
 
@@ -99,7 +99,7 @@ Guard-rails do `verify` (senão bane jogador honesto):
 
 - [x] mod lê a **própria identidade** ✅ — FGuid via `ps.IndividualHandleId.PlayerUId` (probe in-game), bate com o `playerId` da REST
 - [x] V2: UE4SS server-side sob Proton no Palworld ✅ — AOB casa (build Okaetsu `experimental-palworld`); server escuta + mod carrega + feed grava
-- [x] V2: ler pos+`yaw`+FGuid+**nome** de cada player no servidor ✅ — feed `palproxvoice_players.txt` @5Hz
+- [x] V2: ler pos+`yaw`+FGuid de cada player no servidor ✅ — feed `palproxvoice_players.txt` (`fguid,x,y,z,yaw`) @5Hz
 - [ ] V2: teste de voz com 2 players usando a posição autoritativa do feed
 
 ## Backlog — canais de voz (aprendizado do concorrente PalVoice)
@@ -161,11 +161,11 @@ Dois eixos: **quem ouve** (todos / só guilda) × **alcance** (proximidade / glo
 
 ## ETW — IP do servidor em tempo real ✅ **construído**
 
-O companion lê o UDP do processo do Palworld no kernel (`Microsoft-Windows-Kernel-Network`) via `golang-etw`, filtra pelo PID e pega o IP de destino público mais frequente → escreve no `palproxvoice_server.txt`, que o `DetectGameServerIP()` (fonte "live") já consome com prioridade. Fecha a fonte de IP **realtime** que faltava (a `GameServerIPLive`). **Precisa de admin** (sessão ETW de kernel); sem admin, degrada pras outras fontes (save/ini). Fica ligado no startup.
+O companion lê o UDP do processo do Palworld no kernel (`Microsoft-Windows-Kernel-Network`) via `golang-etw`, filtra pelo PID e pega o IP de destino público **com mais tráfego (bytes)** → escreve no `palproxvoice_server.txt`, que o `DetectGameServerIP()` (fonte "live") já consome com prioridade. Fecha a fonte de IP **realtime** que faltava (a `GameServerIPLive`). **Precisa de admin** (sessão ETW de kernel); sem admin, degrada pras outras fontes (save/ini). Fica ligado no startup.
 
 ## V3 — Linux nativo (sem Proton/UE4SS) — 🔬 pesquisa
 
-A mesma posição autoritativa do V2, mas lendo direto do **PalServer nativo de Linux** (sem `.exe` Windows, sem Proton, sem Wine) — via um **leitor de memória externo** (`process_vm_readv` + AOB scan do `GUObjectArray`). Pesquisa concluída: é o único caminho que entrega pos+yaw+FGuid a 5-20Hz no nativo (REST não tem yaw/Z; Blueprint é sandbox; sniff é inviável). **Só o scaffold + plano existem** (harness `thijsvanloef`+Frida + `probe.js` de recon); o leitor de verdade é o trabalho difícil (RE iterando contra o binário ao vivo). Plano completo: [`v3-linux-native/`](../v3-linux-native/) na branch `experimental/v3-linux-native`.
+A mesma posição autoritativa do V2, mas lendo direto do **PalServer nativo de Linux** (sem `.exe` Windows, sem Proton, sem Wine) — via um **leitor de memória externo** (`process_vm_readv` + AOB scan do `GUObjectArray`). Pesquisa concluída: é o único caminho que entrega pos+yaw+FGuid a 5-20Hz no nativo (REST não tem yaw/Z; Blueprint é sandbox; sniff é inviável). **Só o scaffold + plano existem** (harness `thijsvanloef`+Frida + `probe.js` de recon); o leitor de verdade é o trabalho difícil (RE iterando contra o binário ao vivo). Plano completo em `v3-linux-native/`, na branch `experimental/v3-linux-native`.
 
 ## Decisões travadas
 

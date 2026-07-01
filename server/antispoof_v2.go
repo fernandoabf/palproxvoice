@@ -6,7 +6,7 @@
 //	<fguid>,<x>,<y>,<z>,<yaw>
 //
 // Diferente do verify/strict (que usam a REST: 2D, ~1s, SEM yaw), o feed traz a
-// posicao a 20Hz E o YAW de verdade -> espacializacao direcional autoritativa, com
+// posicao a 5Hz E o YAW de verdade -> espacializacao direcional autoritativa, com
 // delay minimo. O cliente nunca afirma posicao (zero spoof).
 //
 // Liga so quando PPV_PLAYERS_FILE aponta pro arquivo (o voz e o servidor de jogo

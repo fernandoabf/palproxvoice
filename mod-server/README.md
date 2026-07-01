@@ -2,7 +2,7 @@
 
 Mod **Lua** que roda DENTRO do servidor dedicado do Palworld (via UE4SS). É o **V2**
 (estilo Simple Voice Chat): o servidor lê pos+yaw+FGuid **autoritativos** de TODOS os
-players (a 20 Hz) e grava num arquivo que o **servidor de voz co-locado** consome →
+players (a 5 Hz) e grava num arquivo que o **servidor de voz co-locado** consome →
 delay mínimo, anti-spoof de graça (o cliente nunca afirma posição). **É Lua → não tem o
 muro do Epic/C++ (UEPseudo).**
 

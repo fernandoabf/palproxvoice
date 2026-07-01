@@ -13,15 +13,15 @@ Histórico do PalProxVoice, organizado por **milestone** (V1 → V1.5 → V2 →
 - **Canais de voz — proximidade / guild / global.** O peer manda `meta{guild,channel}`; o servidor repassa (`peermeta`); o **companion mistura por canal** (proximidade = panner 3D; guild/global = som plano; guild só entre a mesma guild). **Hotkey global Alt+V** (`RegisterHotKey`) cicla o canal **in-game**, sem focar o app nem admin.
 - **Guild — auto + código manual.** O companion prefere a guild que o mod escreve (`palproxvoice_guild.txt`) sobre um código digitado; `probe_guild.lua` descobre a reflexão da guild in-game (leitura real pendente dos logs).
 - **Auto-connect zero-config — acha a PORTA sozinho.** Além do IP, o companion **testa as portas comuns** da voz (8765, 8766, …) e conecta na 1ª que responde como PalProxVoice. Zero digitação.
-- **ETW — IP do servidor em tempo real.** Lê o UDP do processo do Palworld no kernel (`Microsoft-Windows-Kernel-Network`) via `golang-etw` (no-CGO), filtra pelo PID, pega o destino público mais frequente → `palproxvoice_server.txt` (o `DetectGameServerIP()` já consome com prioridade). **Precisa de admin**; degrada sem crashar.
+- **ETW — IP do servidor em tempo real.** Lê o UDP do processo do Palworld no kernel (`Microsoft-Windows-Kernel-Network`) via `golang-etw` (no-CGO), filtra pelo PID, pega o destino público **com mais tráfego (bytes)** → `palproxvoice_server.txt` (o `DetectGameServerIP()` já consome com prioridade). **Precisa de admin**; degrada sem crashar.
 - **Game Pass (WinGDK) confirmado** — UE4SS + o mod cliente rodam na versão Microsoft Store; o `DetectGameServerIP` lê o IP tanto de `WinGDK` quanto de `Windows`.
 
-## V2 — server-side _(funciona · experimental)_
+## V2 — server-side _(server-side funciona · voz e2e não testada · experimental)_
 
 Posição **e yaw autoritativos do servidor** — o cliente nunca afirma posição. Validado in-game (o server escuta, o mod carrega, o feed grava). Roda o `.exe` Windows do PalServer **sob Proton** no Linux.
 
 ### Adicionado
-- **mod server-side** (`mod-server/`) — lê pos+yaw+FGuid+nome de todos os `PlayerController` e escreve `palproxvoice_players.txt` (feed que a voz consome via `PPV_PLAYERS_FILE`). Hook de join (`ServerAcknowledgePossession`).
+- **mod server-side** (`mod-server/`) — lê pos+yaw+FGuid de todos os `PlayerController` e escreve `palproxvoice_players.txt` (feed `fguid,x,y,z,yaw`, que a voz consome via `PPV_PLAYERS_FILE`). Hook de join (`ServerAcknowledgePossession`).
 - **anti-spoof V2** (`server/antispoof_v2.go`) — lê o feed, casa por FGuid/nome, tem prioridade sobre a REST. Off por padrão.
 - **deploy Proton** (`deploy/v2-experimental/linux`) — imagem debian + GE-Proton que auto-baixa o PalServer (depot Windows) + UE4SS Okaetsu + o mod; portas deslocadas. `docker-compose.v2.yml` pro Dokploy. Windows-nativo via `install.ps1`.
 
